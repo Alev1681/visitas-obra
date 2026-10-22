@@ -15,7 +15,8 @@ App para registrar visitas a obras: **contato, endereço, localização GPS/Goog
 - **Relatório**: compartilha texto + fotos pelo WhatsApp/e-mail com 1 toque.
 - **Retornos**: lista de atrasados/hoje/próximos, **rota do dia** no Google Maps e evento no **Google Agenda**.
 - **Checklist de saída** diário (EPI, celular, material de MKT, veículo) + **KM do dia**.
-- **Exportar planilha** (CSV para Excel) e **backup/restauração** completos com fotos.
+- **Exportar planilha** (CSV para Excel) e **backup/restauração** em ZIP, com fotos, completo ou só das novidades.
+- **Rápido com muitos dados**: a lista usa miniaturas e carrega 40 visitas por vez (testado com 2000 visitas e 6000 fotos).
 - Cores da marca (`Cores.png`): azul `#024089`, amarelo `#ffcc00`, cinzas `#3d3d3c` / `#2c2c2c` e branco.
 
 ## Estrutura
@@ -30,7 +31,8 @@ App/
 │   ├── css/styles.css         visual (cores da marca)
 │   ├── js/config.js           ⚙️ PERSONALIZAÇÃO: nome, cores, listas, checklist, fotos
 │   ├── js/db.js               banco local (IndexedDB)
-│   ├── js/photos.js           compactação e carimbo das fotos
+│   ├── js/photos.js           compactação, carimbo e miniaturas das fotos
+│   ├── js/zip.js              leitura e escrita de ZIP (backup)
 │   ├── js/auth.js             login por PIN (hash, recuperação, bloqueio por tentativas)
 │   ├── js/app.js              telas e lógica
 │   └── icons/                 ícones do app
@@ -179,6 +181,27 @@ Para poucos colaboradores não compensa: instalar pela tela inicial dá o mesmo 
 
 ## Dados e segurança
 
-- Os dados ficam **no celular** (não há servidor). Faça **backup semanal** em *Ajustes → Fazer backup* e guarde no Drive.
+- Os dados ficam **no celular** (não há servidor). Faça **backup semanal** em *Ajustes → Backup* e guarde no Drive.
 - Se o celular for trocado: *Restaurar backup* no aparelho novo.
+
+### Backup (ZIP)
+
+- **Backup completo (ZIP com fotos)**: um arquivo `.zip` com `dados.json` e as fotos em `fotos/`. Dá para abrir o ZIP em qualquer computador e ver as fotos. Leve em memória, mesmo com milhares de fotos (900 fotos ≈ 160 MB, gerado em segundos).
+- **Backup só das novidades**: leva apenas as visitas alteradas e as fotos novas desde o **último backup** (qualquer tipo). É bem menor. Para restaurar, restaure primeiro o completo e depois cada backup de novidades, na ordem. **Guarde todos os arquivos.** Visitas ou fotos *excluídas* depois do backup não são removidas ao restaurar.
+- **Restaurar** aceita o ZIP novo e também os backups `.json` do formato antigo. Visitas com o mesmo código são substituídas; as demais são mantidas.
+- O backup **não** leva o PIN nem o código de recuperação.
+
+### Desempenho (medido)
+
+Teste com dados simulados num computador (celular costuma ser 3 a 6 vezes mais lento):
+
+| | 2000 visitas / 6000 fotos |
+|---|---|
+| Lista aparece | **47 ms** (antes 5 s) |
+| Busca | ~250 ms (antes 2 s por tecla) |
+| Retornos | 68 ms (antes 2,9 s) |
+| Backup de 900 fotos | 161 MB, pico de memória 22 MB (antes 457 MB) |
+| Restaurar 900 fotos | 1,5 s (antes 8,5 s) |
+
+Fotos antigas, sem miniatura, ganham uma na primeira vez que aparecem na lista (cerca de 15 a 20 ms por foto, uma única vez).
 - Próximo passo possível: sincronizar com a nuvem (ex.: Firebase) para o gestor ver as visitas em tempo real.

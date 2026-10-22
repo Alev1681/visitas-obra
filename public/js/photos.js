@@ -1,5 +1,7 @@
-/* Fotos: redução de tamanho, carimbo (data/hora, GPS, obra) e conversões para backup. */
+/* Fotos: redução de tamanho, carimbo (data/hora, GPS, obra), miniaturas e conversões. */
 window.Photos = {
+  THUMB: 256, // lado maior da miniatura (px): a lista usa miniaturas, nunca a foto inteira
+
   load(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
@@ -10,6 +12,28 @@ window.Photos = {
     });
   },
 
+  toBlob(canvas, quality) {
+    return new Promise((resolve, reject) =>
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('Falha ao comprimir a foto'))), 'image/jpeg', quality));
+  },
+
+  // Miniatura a partir de um canvas ou imagem já desenhados.
+  thumbFrom(source, w, h) {
+    const s = Math.min(1, this.THUMB / Math.max(w, h));
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(w * s));
+    cv.height = Math.max(1, Math.round(h * s));
+    cv.getContext('2d').drawImage(source, 0, 0, cv.width, cv.height);
+    return this.toBlob(cv, 0.7);
+  },
+
+  // Miniatura de uma foto já salva (fotos antigas, feitas antes das miniaturas existirem).
+  async thumbOf(blob) {
+    const img = await this.load(blob);
+    return this.thumbFrom(img, img.naturalWidth, img.naturalHeight);
+  },
+
+  // Devolve { blob, thumb }: foto reduzida (com carimbo) e a miniatura dela.
   async process(file, lines = []) {
     const { maxLado, qualidade } = window.CONFIG.foto;
     const img = await this.load(file);
@@ -37,8 +61,8 @@ window.Photos = {
       lines.forEach((t, i) => ctx.fillText(t, pad * 1.6, h - bh + pad + i * lh, w - pad * 3));
     }
 
-    return new Promise((resolve, reject) =>
-      cv.toBlob(b => (b ? resolve(b) : reject(new Error('Falha ao comprimir a foto'))), 'image/jpeg', qualidade));
+    const [blob, thumb] = await Promise.all([this.toBlob(cv, qualidade), this.thumbFrom(cv, w, h)]);
+    return { blob, thumb };
   },
 
   toDataURL(blob) {

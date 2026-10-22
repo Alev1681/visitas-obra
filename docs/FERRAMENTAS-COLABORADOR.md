@@ -70,7 +70,7 @@ O carro é uma **vitrine móvel**: precisa estar limpo, com adesivos íntegros e
    - Anotar **etapa da obra**, porque ela indica *quando* cada produto será comprado.
    - Definir **próximo passo** e **data de retorno** antes de sair.
 4. **Enviar o relatório** pelo botão “Relatório” (WhatsApp/e-mail para o gestor) logo após a visita.
-5. **Fim do dia:** KM final; uma vez por semana, **Exportar planilha** e **Backup** (Ajustes).
+5. **Fim do dia:** KM final. Uma vez por semana, **Exportar planilha** e **Backup** (Ajustes); depois do primeiro backup completo, o "só das novidades" é bem menor e mais rápido. Envie o arquivo ZIP para o gestor ou para o Drive.
 
 ## 7. Indicadores para acompanhar (performance)
 

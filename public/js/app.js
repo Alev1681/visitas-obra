@@ -213,6 +213,7 @@
   }
 
   // ---------- lista de visitas ----------
+  const PAGE = 40; // cartões desenhados por vez: a lista cresce conforme o usuário rola
   const listState = { q: '', f: 'todas' };
   const FILTROS = [['todas', 'Todas'], ['quente', 'Quentes'], ['retorno', 'Com retorno'], ['fechado', 'Fechadas'], ['rascunho', 'Rascunhos']];
   const chipInteresse = k => (INTERESSE[k] ? `<span class="chip chip-${k}">${INTERESSE[k]}</span>` : '');
@@ -222,10 +223,13 @@
 
   async function renderList() {
     setHeader(C.appNome);
-    const [visits, photos] = await Promise.all([DB.allVisits(), DB.allPhotos()]);
-    const byVisit = {};
-    photos.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).forEach(p => (byVisit[p.visitId] ??= []).push(p));
+    const visits = await DB.allVisits();
     visits.sort((a, b) => (b.visitDate || '').localeCompare(a.visitDate || ''));
+    // texto de busca montado uma única vez por visita (não a cada tecla)
+    visits.forEach(v => {
+      v._hay = [v.obra?.nome, v.obra?.construtora, v.endereco?.bairro, v.endereco?.cidade, v.endereco?.logradouro,
+        ...(v.contatos || []).flatMap(c => [c.nome, c.telefone])].join(' ').toLowerCase();
+    });
 
     const t = today();
     const hoje = visits.filter(v => !v.draft && (v.visitDate || '').startsWith(t)).length;
@@ -245,13 +249,8 @@
       <div class="filters" role="tablist">${FILTROS.map(([k, l]) => `<button class="pill ${listState.f === k ? 'on' : ''}" data-f="${k}" type="button">${l}</button>`).join('')}</div>
       <div id="list"></div>`;
 
-    const matches = v => {
-      const q = listState.q.trim().toLowerCase();
-      if (q) {
-        const hay = [v.obra?.nome, v.obra?.construtora, v.endereco?.bairro, v.endereco?.cidade, v.endereco?.logradouro,
-          ...(v.contatos || []).flatMap(c => [c.nome, c.telefone])].join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
+    const matches = (v, q) => {
+      if (q && !v._hay.includes(q)) return false;
       switch (listState.f) {
         case 'quente': return !v.draft && v.interesse === 'quente';
         case 'retorno': return isPendingReturn(v);
@@ -262,37 +261,89 @@
     };
 
     const card = v => {
-      const ph = byVisit[v.id] || [];
       const where = [v.endereco?.bairro, v.endereco?.cidade].filter(Boolean).join(', ');
       const sub = [v.obra?.construtora, where].filter(Boolean).join(' · ') || firstContact(v)?.nome || 'Sem endereço';
-      return `<a class="card visit" href="${v.draft ? '#/editar/' : '#/visita/'}${v.id}">
-        <div class="vthumb">${ph[0] ? `<img src="${blobUrl(ph[0].blob)}" alt="" loading="lazy">` : icon('home', 28)}</div>
+      return `<a class="card visit" data-id="${esc(v.id)}" href="${v.draft ? '#/editar/' : '#/visita/'}${v.id}">
+        <div class="vthumb">${icon('home', 28)}</div>
         <div class="vbody">
           <div class="vtitle">${esc(v.obra?.nome || 'Obra sem nome')}</div>
           <div class="vsub">${esc(sub)}</div>
           <div class="vmeta">
             ${v.draft ? '<span class="chip chip-draft">Rascunho</span>' : chipInteresse(v.interesse)}
             <span>${fmtDT(v.visitDate)}</span>
-            ${ph.length ? `<span>${icon('camera', 14)} ${ph.length}</span>` : ''}
+            <span class="vcam" hidden></span>
             ${hasCoords(v) ? `<span>${icon('pin', 14)} GPS</span>` : ''}
           </div>
         </div>
       </a>`;
     };
 
-    const draw = () => {
-      const items = visits.filter(matches);
-      $('#list').innerHTML = items.length ? items.map(card).join('') : visits.length
-        ? `<div class="empty">${icon('search', 40)}<h3>Nada encontrado</h3><p>Tente outra busca ou filtro.</p></div>`
-        : `<div class="empty">${icon('home', 44)}<h3>Nenhuma visita ainda</h3><p>Registre a primeira obra visitada: contato, endereço, GPS e fotos.</p><a class="btn btn-primary" href="#/nova">${icon('plus')} Nova visita</a></div>`;
+    // Miniatura e contagem de fotos só dos cartões que acabaram de aparecer.
+    // Fotos antigas (sem miniatura) ganham uma na primeira vez e ela fica salva.
+    const hydrate = async els => {
+      for (const el of els) {
+        if (!el.isConnected) return;
+        const id = el.dataset.id;
+        const [p, n] = await Promise.all([DB.firstPhoto(id), DB.countPhotos(id)]);
+        if (!el.isConnected) return;
+        if (n) {
+          const cam = el.querySelector('.vcam');
+          cam.innerHTML = `${icon('camera', 14)} ${n}`;
+          cam.hidden = false;
+        }
+        if (!p) continue;
+        let th = p.thumb;
+        if (!th) {
+          try { th = await Photos.thumbOf(p.blob); await DB.putPhoto({ ...p, thumb: th }); } catch (e) { console.warn('miniatura', e); }
+        }
+        if (th && el.isConnected) el.querySelector('.vthumb').innerHTML = `<img src="${blobUrl(th)}" alt="" decoding="async">`;
+      }
     };
-    draw();
 
-    $('#q').addEventListener('input', e => { listState.q = e.target.value; draw(); });
+    let items = [];
+    let shown = 0;
+    const io = 'IntersectionObserver' in window
+      ? new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) paint(false); }, { rootMargin: '600px' })
+      : null;
+
+    function paint(reset) {
+      const list = $('#list');
+      if (!list) return; // saiu da tela antes do atraso da busca terminar
+      if (reset) {
+        const q = listState.q.trim().toLowerCase();
+        items = visits.filter(v => matches(v, q));
+        shown = 0;
+        list.innerHTML = '';
+      }
+      $('#more')?.remove();
+      if (!items.length) {
+        list.innerHTML = visits.length
+          ? `<div class="empty">${icon('search', 40)}<h3>Nada encontrado</h3><p>Tente outra busca ou filtro.</p></div>`
+          : `<div class="empty">${icon('home', 44)}<h3>Nenhuma visita ainda</h3><p>Registre a primeira obra visitada: contato, endereço, GPS e fotos.</p><a class="btn btn-primary" href="#/nova">${icon('plus')} Nova visita</a></div>`;
+        return;
+      }
+      const next = items.slice(shown, shown + PAGE);
+      list.insertAdjacentHTML('beforeend', next.map(card).join(''));
+      shown += next.length;
+      hydrate([...list.querySelectorAll('.visit:not([data-h])')].map(el => { el.dataset.h = '1'; return el; }));
+      if (shown < items.length) {
+        list.insertAdjacentHTML('beforeend', `<button id="more" class="btn btn-ghost wide" type="button">Mostrar mais (${items.length - shown})</button>`);
+        io?.observe($('#more'));
+        $('#more').onclick = () => paint(false);
+      }
+    }
+    paint(true);
+
+    let qTimer = null;
+    $('#q').addEventListener('input', e => {
+      listState.q = e.target.value;
+      clearTimeout(qTimer);
+      qTimer = setTimeout(() => paint(true), 180);
+    });
     $$('.pill').forEach(b => b.addEventListener('click', () => {
       listState.f = b.dataset.f;
       $$('.pill').forEach(x => x.classList.toggle('on', x === b));
-      draw();
+      paint(true);
     }));
     if (showInstall) {
       $('#b-inst').onclick = async () => { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; $('.banner')?.remove(); };
@@ -643,7 +694,7 @@
     // Fotos
     const drawGallery = () => {
       $('#gallery').innerHTML = photos.length
-        ? photos.map((p, i) => `<div class="ph"><img src="${blobUrl(p.blob)}" data-i="${i}" alt="${esc(p.categoria)}"><span>${esc(p.categoria)}</span><button type="button" class="ph-del" data-id="${p.id}" aria-label="Excluir foto">${icon('x', 16)}</button></div>`).join('')
+        ? photos.map((p, i) => `<div class="ph"><img src="${blobUrl(p.thumb || p.blob)}" data-i="${i}" alt="${esc(p.categoria)}" decoding="async"><span>${esc(p.categoria)}</span><button type="button" class="ph-del" data-id="${p.id}" aria-label="Excluir foto">${icon('x', 16)}</button></div>`).join('')
         : '<p class="muted small" style="grid-column:1/-1;margin:0">Nenhuma foto ainda.</p>';
     };
     drawGallery();
@@ -660,9 +711,9 @@
           [field('obra.nome').value.trim(), cfg.colaborador].filter(Boolean).join('  ·  '),
         ].filter(Boolean) : [];
         try {
-          const blob = await Photos.process(f, lines);
+          const { blob, thumb } = await Photos.process(f, lines);
           const p = {
-            id: DB.uid(), visitId: v.id, blob, categoria: $('#foto-cat').value, createdAt: now.toISOString(),
+            id: DB.uid(), visitId: v.id, blob, thumb, categoria: $('#foto-cat').value, createdAt: now.toISOString(),
             lat: hasCoords(v) ? v.local.lat : null, lng: hasCoords(v) ? v.local.lng : null,
           };
           await DB.putPhoto(p);
@@ -851,7 +902,7 @@
       <section class="sec">
         <h2>Fotos (${photos.length})</h2>
         <div class="gallery" id="gallery">${photos.length
-          ? photos.map((p, i) => `<div class="ph"><img src="${blobUrl(p.blob)}" data-i="${i}" alt="${esc(p.categoria)}" loading="lazy"><span>${esc(p.categoria)}</span></div>`).join('')
+          ? photos.map((p, i) => `<div class="ph"><img src="${blobUrl(p.thumb || p.blob)}" data-i="${i}" alt="${esc(p.categoria)}" loading="lazy" decoding="async"><span>${esc(p.categoria)}</span></div>`).join('')
           : '<p class="muted small" style="grid-column:1/-1;margin:0">Nenhuma foto.</p>'}</div>
       </section>
 
@@ -903,6 +954,7 @@
   async function renderRetornos() {
     setHeader('Retornos');
     const visits = (await DB.allVisits()).filter(isPendingReturn).sort((a, b) => a.retorno.localeCompare(b.retorno));
+    const LIM = 30; // retornos desenhados por grupo; o resto aparece em "Mostrar mais"
     const t = today();
     const wk = addDays(t, 7);
     const groups = [
@@ -943,8 +995,18 @@
 
     view.innerHTML = visits.length ? `
       ${rota ? `<a class="btn btn-primary wide" href="${rota}" target="_blank" rel="noopener" style="margin-bottom:6px">${icon('nav')} Rota de hoje no Google Maps (${stops.length} ${stops.length > 1 ? 'paradas' : 'parada'})</a>` : ''}
-      ${groups.map(([title, list, late]) => `<div class="group-title">${title} (${list.length})</div>${list.map(v => item(v, late)).join('')}`).join('')}`
+      ${groups.map(([title, list, late], gi) => `<div class="group-title">${title} (${list.length})</div>
+        <div data-grp="${gi}">${list.slice(0, LIM).map(v => item(v, late)).join('')}</div>
+        ${list.length > LIM ? `<button class="btn btn-ghost wide" type="button" data-more="${gi}">Mostrar mais (${list.length - LIM})</button>` : ''}`).join('')}`
       : `<div class="empty">${icon('calendar', 44)}<h3>Nenhum retorno agendado</h3><p>Ao registrar uma visita, preencha a “Data de retorno” para ela aparecer aqui.</p></div>`;
+
+    $$('[data-more]', view).forEach(b => {
+      b.onclick = () => {
+        const [, list, late] = groups[+b.dataset.more];
+        $(`[data-grp="${b.dataset.more}"]`).insertAdjacentHTML('beforeend', list.slice(LIM).map(v => item(v, late)).join(''));
+        b.remove();
+      };
+    });
   }
 
   // ---------- checklist diário ----------
@@ -1017,15 +1079,14 @@
     const file = new File([blob], name, { type: blob.type });
     const mobile = matchMedia('(pointer: coarse)').matches;
     if (mobile && navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; }
+      try { await navigator.share({ files: [file], title: name }); return true; } catch (e) { if (e.name === 'AbortError') return false; }
     }
     download(blob, name);
+    return true;
   }
 
   async function exportCSV() {
-    const [visits, photos] = await Promise.all([DB.allVisits(), DB.allPhotos()]);
-    const count = {};
-    photos.forEach(p => { count[p.visitId] = (count[p.visitId] || 0) + 1; });
+    const [visits, count] = await Promise.all([DB.allVisits(), DB.photoCounts()]);
     const head = ['Data da visita', 'Status', 'Interesse', 'Obra', 'Construtora/cliente', 'Tipo', 'Etapa', 'Contato', 'Cargo', 'Telefone', 'E-mail',
       'Outros contatos', 'CEP', 'Logradouro', 'Número', 'Complemento', 'Bairro', 'Cidade', 'UF', 'Referência', 'Latitude', 'Longitude',
       'Precisão GPS (m)', 'Google Maps', 'Material entregue', 'Retorno', 'Próximos passos', 'Observações', 'KM', 'Fotos', 'Registrado por'];
@@ -1038,7 +1099,7 @@
         e.cep, e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.referencia,
         hasCoords(v) ? String(v.local.lat).replace('.', ',') : '', hasCoords(v) ? String(v.local.lng).replace('.', ',') : '',
         v.local?.accuracy ?? '', mapsHref(v), (v.materiais || []).join(', '), fmtDate(v.retorno), v.proximosPassos, v.observacoes, v.km,
-        count[v.id] || 0, v.autor];
+        count.get(v.id) || 0, v.autor];
     });
     const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
     const csv = '﻿' + [head, ...rows].map(r => r.map(q).join(';')).join('\r\n');
@@ -1046,36 +1107,80 @@
     toast(`${rows.length} visita(s) exportada(s)`);
   }
 
-  async function exportBackup() {
-    toast('Gerando backup…', 10000);
-    const [visits, photos, dias, config] = await Promise.all([DB.allVisits(), DB.allPhotos(), DB.allDias(), DB.getMeta('config')]);
-    const ph = [];
-    for (const p of photos) {
-      const { blob, ...meta } = p;
-      ph.push({ ...meta, data: await Photos.toDataURL(blob) });
-    }
-    const data = { app: 'visitas-obra', versao: C.versao, exportadoEm: new Date().toISOString(), visits, dias, config: config || null, photos: ph };
-    await saveFile(new Blob([JSON.stringify(data)], { type: 'application/json' }), `backup-visitas-${today()}.json`);
-    toast(`Backup com ${visits.length} visita(s) e ${photos.length} foto(s) ✓`);
+  // Backup em ZIP: dados.json + fotos/*.jpg. As fotos entram como Blob (sem copiar para a memória),
+  // então o uso de memória fica baixo mesmo com milhares de fotos. "Só novidades" leva apenas o que
+  // foi criado ou alterado desde o último backup.
+  async function exportBackup(somenteNovidades) {
+    const inicio = new Date().toISOString();
+    const ultimo = (await DB.getMeta('backup'))?.ultimo || null;
+    const desde = somenteNovidades ? ultimo : null;
+    toast('Gerando backup…', 60000);
+    const [todasVisitas, todasFotos, dias, config] = await Promise.all([DB.allVisits(), DB.allPhotos(), DB.allDias(), DB.getMeta('config')]);
+    const visits = desde ? todasVisitas.filter(v => (v.updatedAt || v.createdAt || '') > desde) : todasVisitas;
+    const photos = desde ? todasFotos.filter(p => p.createdAt > desde) : todasFotos;
+    const dados = {
+      app: 'visitas-obra', formato: 2, versao: C.versao, exportadoEm: inicio, incremental: !!desde, desde,
+      visits, dias, config: config || null,
+      photos: photos.map(({ blob, thumb, ...meta }) => ({ ...meta, arquivo: `fotos/${meta.id}.jpg` })),
+    };
+    const zip = await Zip.build([
+      { name: 'dados.json', data: JSON.stringify(dados) },
+      ...photos.map(p => ({ name: `fotos/${p.id}.jpg`, data: p.blob })),
+    ]);
+    const entregue = await saveFile(zip, `backup-${desde ? 'novidades' : 'visitas'}-${today()}.zip`);
+    if (!entregue) { toast('Backup cancelado.'); return; }
+    await DB.putMeta({ key: 'backup', ultimo: inicio });
+    toast(`Backup ${desde ? 'das novidades' : 'completo'}: ${visits.length} visita(s), ${photos.length} foto(s), ${(zip.size / 1048576).toFixed(1)} MB ✓`, 5000);
+    if (view.querySelector('#bk-info')) renderConfig();
   }
 
   async function importBackup(file) {
-    const data = JSON.parse(await file.text());
+    const isZip = new Uint8Array(await file.slice(0, 2).arrayBuffer()).join() === '80,75'; // "PK"
+    if (isZip) return importZip(file);
+    return importJsonAntigo(file);
+  }
+
+  async function importZip(file) {
+    const z = await Zip.read(file);
+    if (!z.has('dados.json')) throw new Error('Este ZIP não é um backup do app.');
+    const data = JSON.parse(await (await z.blob('dados.json')).text());
     if (data.app !== 'visitas-obra' || !Array.isArray(data.visits)) throw new Error('Este arquivo não é um backup do app.');
     for (const v of data.visits) await DB.putVisit(v, true);
+    let fotos = 0;
     for (const p of data.photos || []) {
-      const { data: d, ...meta } = p;
-      await DB.putPhoto({ ...meta, blob: await Photos.fromDataURL(d) });
+      const blob = await z.blob(p.arquivo, 'image/jpeg');
+      if (!blob) continue;
+      const { arquivo, ...meta } = p;
+      await DB.putPhoto({ ...meta, blob });
+      if (++fotos % 25 === 0) toast(`Restaurando fotos… ${fotos} de ${data.photos.length}`, 4000);
     }
     for (const d of data.dias || []) await DB.putDia(d);
     if (data.config) await DB.putMeta(data.config);
-    return data.visits.length;
+    return { visitas: data.visits.length, fotos };
+  }
+
+  // Formato anterior (JSON com fotos em base64): continua podendo ser restaurado.
+  async function importJsonAntigo(file) {
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { throw new Error('Este arquivo não é um backup do app.'); }
+    if (data.app !== 'visitas-obra' || !Array.isArray(data.visits)) throw new Error('Este arquivo não é um backup do app.');
+    for (const v of data.visits) await DB.putVisit(v, true);
+    let fotos = 0;
+    for (const p of data.photos || []) {
+      const { data: d, ...meta } = p;
+      await DB.putPhoto({ ...meta, blob: await Photos.fromDataURL(d) });
+      fotos++;
+    }
+    for (const d of data.dias || []) await DB.putDia(d);
+    if (data.config) await DB.putMeta(data.config);
+    return { visitas: data.visits.length, fotos };
   }
 
   async function renderConfig() {
     setHeader('Ajustes');
     const cfg = await getSettings();
     const auth = await Auth.get();
+    const bk = await DB.getMeta('backup');
     let uso = '';
     try {
       const est = await navigator.storage?.estimate?.();
@@ -1111,12 +1216,14 @@
 
       <section class="sec">
         <h2>Dados e backup</h2>
-        <p class="small muted">Os dados ficam guardados neste celular e funcionam sem internet. Faça backup toda semana e envie para o gestor ou para o Google Drive.</p>
+        <p class="small muted">Os dados ficam guardados neste celular e funcionam sem internet. Faça backup toda semana e envie para o gestor ou para o Google Drive. O backup é um arquivo ZIP: as fotos ficam dentro e abrem em qualquer computador.</p>
         <div class="stack">
           <button class="btn btn-blue wide" id="btn-csv" type="button">${icon('download')} Exportar planilha (Excel/CSV)</button>
-          <button class="btn btn-ghost wide" id="btn-bkp" type="button">${icon('download')} Fazer backup completo (com fotos)</button>
-          <label class="btn btn-ghost wide">${icon('upload')} Restaurar backup<input id="in-bkp" class="vh" type="file" accept="application/json,.json"></label>
+          <button class="btn btn-ghost wide" id="btn-bkp" type="button">${icon('download')} Backup completo (ZIP com fotos)</button>
+          ${bk?.ultimo ? `<button class="btn btn-ghost wide" id="btn-bkp2" type="button">${icon('download')} Backup só das novidades (menor)</button>` : ''}
+          <label class="btn btn-ghost wide">${icon('upload')} Restaurar backup<input id="in-bkp" class="vh" type="file" accept=".zip,application/zip,.json,application/json"></label>
         </div>
+        <p class="hint" id="bk-info">${bk?.ultimo ? `Último backup: ${fmtISO(bk.ultimo)}. “Só das novidades” leva o que mudou depois disso; guarde os backups anteriores.` : 'Nenhum backup feito ainda neste celular.'}</p>
         ${uso ? `<p class="hint">${uso}</p>` : ''}
       </section>
 
@@ -1146,13 +1253,14 @@
     $('#btn-pin').onclick = () => showLock('change');
     $('#btn-lock').onclick = () => lock();
     $('#btn-csv').onclick = () => exportCSV().catch(e => toast('Erro ao exportar: ' + e.message));
-    $('#btn-bkp').onclick = () => exportBackup().catch(e => toast('Erro no backup: ' + e.message));
+    $('#btn-bkp').onclick = () => exportBackup(false).catch(e => toast('Erro no backup: ' + e.message));
+    $('#btn-bkp2')?.addEventListener('click', () => exportBackup(true).catch(e => toast('Erro no backup: ' + e.message)));
     $('#in-bkp').onchange = async e => {
       const f = e.target.files[0];
       e.target.value = '';
       if (!f || !(await askConfirm('Restaurar este backup? Visitas com o mesmo código serão substituídas.', 'Restaurar'))) return;
-      try { const n = await importBackup(f); toast(`${n} visita(s) restaurada(s) ✓`); }
-      catch (err) { toast(err.message); }
+      try { const r = await importBackup(f); toast(`${r.visitas} visita(s) e ${r.fotos} foto(s) restauradas ✓`, 5000); }
+      catch (err) { console.error(err); toast(err.message, 6000); }
     };
     $('#btn-wipe').onclick = async () => {
       if (!(await askConfirm('Apagar TODAS as visitas, fotos e ajustes deste celular?', 'Apagar tudo'))) return;

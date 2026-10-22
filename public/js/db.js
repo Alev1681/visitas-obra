@@ -65,6 +65,30 @@ window.DB = (() => {
     },
     async putPhoto(p) { return req((await store('photos', 'readwrite')).put(p)); },
     async deletePhoto(id) { return req((await store('photos', 'readwrite')).delete(id)); },
+    // Consultas leves para a lista: não carregam todas as fotos, só o que a tela precisa.
+    async firstPhoto(visitId) {
+      const s = await store('photos');
+      return new Promise((resolve, reject) => {
+        const r = s.index('visitId').openCursor(IDBKeyRange.only(visitId));
+        r.onsuccess = () => resolve(r.result ? r.result.value : undefined);
+        r.onerror = () => reject(r.error);
+      });
+    },
+    async countPhotos(visitId) { return req((await store('photos')).index('visitId').count(IDBKeyRange.only(visitId))); },
+    async photoCounts() {
+      const s = await store('photos');
+      return new Promise((resolve, reject) => {
+        const counts = new Map();
+        const r = s.index('visitId').openKeyCursor();
+        r.onsuccess = () => {
+          const c = r.result;
+          if (!c) { resolve(counts); return; }
+          counts.set(c.key, (counts.get(c.key) || 0) + 1);
+          c.continue();
+        };
+        r.onerror = () => reject(r.error);
+      });
+    },
 
     async allDias() { return req((await store('dias')).getAll()); },
     async getDia(data) { return req((await store('dias')).get(data)); },
