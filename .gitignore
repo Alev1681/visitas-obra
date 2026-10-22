@@ -8,6 +8,11 @@ node_modules/
 # configuração local de ferramentas
 .claude/
 
+# variáveis de ambiente (nunca enviar ao GitHub)
+.env
+.env.*
+!.env.example
+
 # arquivos de sistema (Windows / OneDrive)
 Thumbs.db
 desktop.ini
