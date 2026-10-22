@@ -1,0 +1,21 @@
+{
+  "name": "visitas-obra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App (PWA) para registrar visitas a obras: contatos, endereço, GPS/Google Maps, fotos e material de marketing.",
+  "scripts": {
+    "start": "serve public --no-clipboard --config ../serve.json",
+    "deploy:netlify": "npx --yes netlify-cli@17 deploy --prod --dir public",
+    "deploy:cloudflare": "npx --yes wrangler@3 pages deploy public --project-name visitas-obra",
+    "deploy:vercel": "npx --yes vercel@37 --prod",
+    "firebase:login": "npx --yes firebase-tools@13 login",
+    "firebase:projeto": "npx --yes firebase-tools@13 use --add",
+    "deploy:firebase": "npx --yes firebase-tools@13 deploy --only hosting"
+  },
+  "dependencies": {
+    "serve": "14.2.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

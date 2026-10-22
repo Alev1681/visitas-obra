@@ -1,0 +1,13 @@
+node_modules/
+.netlify/
+.vercel/
+.firebase/
+.wrangler/
+*.log
+
+# configuração local de ferramentas
+.claude/
+
+# arquivos de sistema (Windows / OneDrive)
+Thumbs.db
+desktop.ini

@@ -1,0 +1,4 @@
+# Netlify: publica a pasta public (sem etapa de build).
+# Os cabeçalhos HTTP ficam em public/_headers (lido pelo Netlify e pelo Cloudflare Pages).
+[build]
+  publish = "public"
