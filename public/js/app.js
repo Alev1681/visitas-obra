@@ -1205,6 +1205,10 @@
           <button class="btn btn-ghost" id="btn-pin" type="button">${icon('edit', 18)} E-mail / senha</button>
           <button class="btn btn-dark" id="btn-lock" type="button">${icon('lock', 18)} Sair</button>
         </div>
+        <button class="btn btn-ghost wide" id="btn-rec" type="button" style="margin-top:10px">${icon('lock', 18)} ${Auth.hasRecovery(auth) ? 'Gerar novo código de recuperação' : 'Gerar código de recuperação'}</button>
+        <p class="hint">${Auth.hasRecovery(auth)
+          ? 'Já existe um código de recuperação guardado. Gerar outro invalida o anterior.'
+          : 'Opcional: o código permite criar uma senha nova se você esquecer a atual. Sem ele, a recuperação é apagar os dados e restaurar um backup.'}</p>
       </section>
 
       ${standalone ? '' : `<section class="sec">
@@ -1252,6 +1256,7 @@
     });
     $('#btn-pin').onclick = () => showLock('change');
     $('#btn-lock').onclick = () => lock();
+    $('#btn-rec').onclick = () => showLock('gerar');
     $('#btn-csv').onclick = () => exportCSV().catch(e => toast('Erro ao exportar: ' + e.message));
     $('#btn-bkp').onclick = () => exportBackup(false).catch(e => toast('Erro no backup: ' + e.message));
     $('#btn-bkp2')?.addEventListener('click', () => exportBackup(true).catch(e => toast('Erro no backup: ' + e.message)));
@@ -1273,6 +1278,8 @@
 
   // ---------- login (e-mail e senha neste aparelho) ----------
   // Depois do primeiro login o app continua conectado neste celular até o colaborador tocar em "Sair".
+  // Nenhuma tela de código aparece no cadastro nem no login: o código de recuperação é opcional e
+  // só é gerado quando a pessoa pede, em Ajustes.
   let locked = true;
   const waitText = ms => (ms >= 60000 ? `${Math.ceil(ms / 60000)} min` : `${Math.ceil(ms / 1000)} s`);
   const nomeDoEmail = e => String(e).split('@')[0].split(/[._+-]+/).filter(Boolean).map(s => s[0].toUpperCase() + s.slice(1)).join(' ');
@@ -1323,6 +1330,7 @@
     const auth = await Auth.get();
     const cfg = await getSettings();
     const legacy = Auth.isLegacy(auth); // conta antiga, só com PIN
+    const temCodigo = Auth.hasRecovery(auth);
     mode ??= !auth ? 'setup' : legacy ? 'migrate' : 'login';
     let el = $('#lock');
     if (!el) {
@@ -1332,6 +1340,7 @@
       document.body.appendChild(el);
     }
 
+    // links: lista de [destino, texto]
     const views = {
       setup: {
         sub: 'Primeiro acesso neste celular: informe seu e-mail e crie uma senha.',
@@ -1342,15 +1351,25 @@
         sub: 'Entre com seu e-mail e senha.',
         body: emailField(auth?.email) + passField('l-pass', 'Senha', 'current-password'),
         btn: 'Entrar',
-        link: ['recover', 'Esqueci a senha'],
+        links: [['recover', 'Esqueci a senha']],
       },
-      recover: {
-        sub: 'Digite o código de recuperação (fica com o gestor) e crie uma senha nova. As visitas não são apagadas.',
+      recover: temCodigo ? {
+        sub: 'Digite o código de recuperação que foi gerado em Ajustes e crie uma senha nova. As visitas não são apagadas.',
         body: '<label class="fld"><span>Código de recuperação</span><input id="l-code" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX"></label>'
           + (legacy ? emailField('') : '')
           + passField('l-pass', 'Nova senha (mínimo 6 caracteres)', 'new-password'),
         btn: 'Criar nova senha',
-        link: [legacy ? 'migrate' : 'login', 'Voltar'],
+        links: [[legacy ? 'migrate' : 'login', 'Voltar']],
+      } : {
+        sub: 'Este celular não tem um código de recuperação. Sem ele, o único caminho é apagar os dados do app e restaurar um backup: as visitas e fotos só voltam se você tiver o arquivo de backup.',
+        body: '<button type="button" class="btn btn-ghost wide" id="l-wipe">Apagar os dados deste celular</button>',
+        links: [[legacy ? 'migrate' : 'login', 'Voltar']],
+      },
+      gerar: {
+        sub: 'Gere um código de recuperação e guarde com o gestor. Ele permite criar uma senha nova se você esquecer a atual. Um código novo substitui o anterior e aparece uma única vez.',
+        body: passField('l-old', 'Digite sua senha para continuar', 'current-password'),
+        btn: 'Gerar código',
+        links: [['cancel', 'Cancelar']],
       },
       change: {
         sub: 'Trocar o e-mail ou a senha deste celular.',
@@ -1358,7 +1377,7 @@
           + passField('l-old', 'Senha atual', 'current-password')
           + passField('l-pass', 'Nova senha (deixe em branco para manter)', 'new-password'),
         btn: 'Salvar',
-        link: ['cancel', 'Cancelar'],
+        links: [['cancel', 'Cancelar']],
       },
       migrate: {
         sub: 'Atualização: o app agora usa e-mail e senha no lugar do PIN. Digite seu PIN atual e crie seu acesso.',
@@ -1366,7 +1385,7 @@
           + emailField('')
           + passField('l-pass', 'Nova senha (mínimo 6 caracteres)', 'new-password'),
         btn: 'Atualizar e entrar',
-        link: ['recover', 'Esqueci o PIN'],
+        links: temCodigo ? [['recover', 'Esqueci o PIN']] : [],
       },
     };
     const vw = views[mode];
@@ -1374,9 +1393,9 @@
       <form id="lock-form" novalidate>
         ${vw.body}
         <p class="lock-err" id="lock-err" role="alert"></p>
-        <button class="btn btn-primary wide" type="submit">${vw.btn}</button>
+        ${vw.btn ? `<button class="btn btn-primary wide" type="submit">${vw.btn}</button>` : ''}
       </form>
-      ${vw.link ? `<button type="button" class="lock-link" data-go="${vw.link[0]}">${vw.link[1]}</button>` : ''}`);
+      ${(vw.links || []).map(([go, t]) => `<button type="button" class="lock-link" data-go="${go}">${t}</button>`).join('')}`);
 
     const val = id => $(`#${id}`, el)?.value.trim() || '';
     const raw = id => $(`#${id}`, el)?.value || ''; // senhas não são cortadas
@@ -1408,9 +1427,9 @@
         if (!email) return;
         const p = goodPass();
         if (p === null) return;
-        const code = await Auth.setup(email, p);
+        await Auth.setup(email, p);
         await nomePadrao(email);
-        showCode(code, email);
+        await unlock();
       } else if (mode === 'login') {
         const r = await Auth.check(val('l-email'), raw('l-pass'));
         if (r.ok) { await unlock(); return; }
@@ -1422,12 +1441,17 @@
         const p = goodPass();
         if (p === null) return;
         const r = await Auth.resetWithRecovery(val('l-code'), p, email);
-        if (r.code) {
+        if (r.ok) {
           if (email) await nomePadrao(email);
-          showCode(r.code, email || auth.email);
+          toast('Senha alterada ✓');
+          await unlock();
           return;
         }
         err(r.waitMs ? blockedMsg(r.waitMs) : 'Código de recuperação incorreto.');
+      } else if (mode === 'gerar') {
+        const r = await Auth.newRecoveryCode(raw('l-old'));
+        if (!r.ok) { err(r.waitMs ? blockedMsg(r.waitMs) : 'Senha incorreta.'); return; }
+        showCode(r.code, auth.email);
       } else if (mode === 'change') {
         const email = goodEmail();
         if (!email) return;
@@ -1458,13 +1482,23 @@
       b.textContent = mostrar ? 'Ocultar' : 'Mostrar';
       i.focus();
     }));
-    $('[data-go]', el)?.addEventListener('click', e => {
-      const go = e.currentTarget.dataset.go;
-      if (go === 'cancel') el.remove(); else showLock(go);
+    $$('[data-go]', el).forEach(b => b.addEventListener('click', () => {
+      if (b.dataset.go === 'cancel') el.remove(); else showLock(b.dataset.go);
+    }));
+    // sem senha e sem código: o único caminho é recomeçar (as visitas só voltam com um backup)
+    $('#l-wipe', el)?.addEventListener('click', async () => {
+      if (!(await askConfirm('Apagar TODAS as visitas, fotos e ajustes deste celular? As visitas só voltam se você tiver um arquivo de backup.', 'Apagar tudo'))) return;
+      if (!(await askConfirm('Tem certeza? Essa ação não pode ser desfeita.', 'Sim, apagar'))) return;
+      await DB.clearAll();
+      setSession(null);
+      history.replaceState(null, '', '#/');
+      toast('Dados apagados');
+      showLock('setup');
     });
     $('#lock-form', el).addEventListener('submit', async e => {
       e.preventDefault();
       const btn = $('#lock-form button[type="submit"]', el);
+      if (!btn) return;
       const label = btn.textContent;
       btn.disabled = true;
       btn.textContent = 'Verificando…';
@@ -1474,6 +1508,7 @@
     [...el.querySelectorAll('input')].find(i => !i.value)?.focus(); // com e-mail já preenchido, vai direto para a senha
   }
 
+  // Mostra o código gerado em Ajustes (uma única vez) e fecha sem mexer na sessão.
   function showCode(code, email) {
     const el = $('#lock');
     const text = `Código de recuperação do app ${C.appNome} (${email}): ${code}`;
@@ -1484,8 +1519,7 @@
         <button class="btn btn-ghost" id="c-copy" type="button">${icon('copy', 18)} Copiar</button>
         <button class="btn btn-ghost" id="c-share" type="button">${icon('share', 18)} Enviar</button>
       </div>
-      <label class="lock-check"><input type="checkbox" id="c-ok"><span>Guardei o código em local seguro</span></label>
-      <button class="btn btn-primary wide" id="c-go" type="button" disabled>Continuar</button>`);
+      <button class="btn btn-primary wide" id="c-go" type="button" style="margin-top:14px">Já guardei, fechar</button>`);
     $('#c-copy', el).onclick = async () => {
       try { await navigator.clipboard.writeText(code); $('#c-copy', el).textContent = 'Copiado ✓'; }
       catch { $('#c-copy', el).textContent = 'Anote à mão'; }
@@ -1496,8 +1530,10 @@
       } catch (e) { if (e.name === 'AbortError') return; }
       window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
     };
-    $('#c-ok', el).onchange = e => { $('#c-go', el).disabled = !e.target.checked; };
-    $('#c-go', el).onclick = () => unlock();
+    $('#c-go', el).onclick = () => {
+      el.remove();
+      if (location.hash === '#/config') renderConfig();
+    };
   }
 
   async function start() {

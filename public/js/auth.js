@@ -1,6 +1,7 @@
 /* Login local por e-mail e senha: hash PBKDF2 (WebCrypto) guardado no IndexedDB, código de recuperação
- * e bloqueio progressivo após tentativas erradas. Protege o app contra acesso casual ao celular;
- * não é autenticação em servidor (o e-mail não é verificado, só identifica o colaborador). */
+ * opcional (gerado em Ajustes, só quando a pessoa quiser) e bloqueio progressivo após tentativas erradas.
+ * Protege o app contra acesso casual ao celular; não é autenticação em servidor (o e-mail só identifica
+ * o colaborador, não é verificado). */
 window.Auth = (() => {
   const ITER = 150000;
   const MAX_FALHAS = 5;
@@ -62,14 +63,13 @@ window.Auth = (() => {
     validEmail: s => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normEmail(s)),
     // Conta criada antes do login por e-mail (só PIN): precisa migrar uma vez.
     isLegacy: a => !!a && !a.email,
+    hasRecovery: a => !!a?.recHash,
 
+    // Cria a conta. Nenhum código é gerado ou mostrado aqui: ele é opcional (veja newRecoveryCode).
     async setup(email, senha) {
-      const recSalt = newSalt();
-      const code = recoveryCode();
-      const a = { key: 'auth', email: normEmail(email), recSalt: b64(recSalt), recHash: await derive(normCode(code), recSalt), falhas: 0, bloqueadoAte: 0, criadoEm: new Date().toISOString() };
+      const a = { key: 'auth', email: normEmail(email), falhas: 0, bloqueadoAte: 0, criadoEm: new Date().toISOString() };
       await newPassword(a, senha);
       await DB.putMeta(a);
-      return code;
     },
 
     // Confere e-mail e senha juntos (a mensagem de erro não diz qual dos dois está errado).
@@ -95,21 +95,8 @@ window.Auth = (() => {
       return a.email;
     },
 
-    // Código certo: grava a senha nova e gera um código de recuperação novo (o antigo deixa de valer).
-    async resetWithRecovery(code, senha, email) {
-      const a = await get();
-      if (waitOf(a)) return { waitMs: waitOf(a) };
-      if (!same(await derive(normCode(code), unb64(a.recSalt), a.iter), a.recHash)) return fail(a);
-      const recSalt = newSalt();
-      const novo = recoveryCode();
-      if (email) a.email = normEmail(email);
-      await newPassword(a, senha);
-      Object.assign(a, { recSalt: b64(recSalt), recHash: await derive(normCode(novo), recSalt), falhas: 0, bloqueadoAte: 0 });
-      await DB.putMeta(a);
-      return { code: novo };
-    },
-
-    // Migração de quem já usava PIN: confere o PIN antigo e define e-mail e senha (o código de recuperação continua valendo).
+    // Migração de quem já usava PIN: confere o PIN antigo e define e-mail e senha.
+    // O código de recuperação que a conta já tinha continua valendo.
     async migrate(pin, email, senha) {
       const a = await get();
       if (waitOf(a)) return { ok: false, waitMs: waitOf(a) };
@@ -118,6 +105,38 @@ window.Auth = (() => {
       delete a.nome;
       await newPassword(a, senha);
       return succeed(a);
+    },
+
+    // ---- código de recuperação (opcional) ----
+    // Pede a senha atual e gera um código novo, que substitui o anterior. Só o hash fica guardado;
+    // o código em claro é devolvido uma única vez para quem pediu guardá-lo.
+    async newRecoveryCode(senha) {
+      const r = await this.checkPassword(senha);
+      if (!r.ok) return r;
+      const a = await get();
+      const recSalt = newSalt();
+      const code = recoveryCode();
+      a.recSalt = b64(recSalt);
+      a.recHash = await derive(normCode(code), recSalt);
+      a.recCriadoEm = new Date().toISOString();
+      await DB.putMeta(a);
+      return { ok: true, code };
+    },
+
+    // Código certo: grava a senha nova (e o e-mail, se a conta antiga não tinha). O código usado deixa de valer.
+    async resetWithRecovery(code, senha, email) {
+      const a = await get();
+      if (waitOf(a)) return { waitMs: waitOf(a) };
+      if (!a.recHash || !same(await derive(normCode(code), unb64(a.recSalt), a.iter), a.recHash)) return fail(a);
+      if (email) a.email = normEmail(email);
+      await newPassword(a, senha);
+      delete a.recSalt;
+      delete a.recHash;
+      delete a.recCriadoEm;
+      a.falhas = 0;
+      a.bloqueadoAte = 0;
+      await DB.putMeta(a);
+      return { ok: true };
     },
   };
 })();

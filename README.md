@@ -5,7 +5,7 @@ App para registrar visitas a obras: **contato, endereço, localização GPS/Goog
 
 ## Funcionalidades
 
-- **Login simples**: só **e-mail e senha**, criados no primeiro acesso; depois o app **continua conectado** neste celular até tocar em *Sair*. Gera um **código de recuperação** para o gestor guardar.
+- **Login simples**: só **e-mail e senha**, criados no primeiro acesso; depois o app **continua conectado** neste celular até tocar em *Sair*. Sem tela de código no cadastro nem no login; o **código de recuperação é opcional** e é gerado em *Ajustes* quando a pessoa quiser.
 - **Nova visita**: obra, construtora, tipo e etapa; vários contatos (nome, cargo, telefone/WhatsApp, e-mail).
 - **Endereço**: busca automática pelo **CEP** (ViaCEP) ou **pela localização do GPS**.
 - **Localização**: botão **Capturar GPS** (busca a melhor precisão por até 15 s), ou **colar link do Google Maps**. Abre **Mapa** e **Rota** no Google Maps.
@@ -33,7 +33,7 @@ App/
 │   ├── js/db.js               banco local (IndexedDB)
 │   ├── js/photos.js           compactação, carimbo e miniaturas das fotos
 │   ├── js/zip.js              leitura e escrita de ZIP (backup)
-│   ├── js/auth.js             login por e-mail e senha (hash, recuperação, bloqueio por tentativas)
+│   ├── js/auth.js             login por e-mail e senha (hash, código de recuperação opcional, bloqueio por tentativas)
 │   ├── js/app.js              telas e lógica
 │   └── icons/                 ícones do app
 ├── .github/workflows/pages.yml       publicação automática no GitHub Pages
@@ -144,7 +144,7 @@ Para poucos colaboradores não compensa: instalar pela tela inicial dá o mesmo 
 1. Abra o link publicado no celular.
    - **Android (Chrome):** menu **⋮** → **Instalar app** (ou o botão “Instalar” que aparece no app).
    - **iPhone (Safari):** **Compartilhar** → **Adicionar à Tela de Início**.
-2. Abra pelo ícone, **crie sua conta (e-mail e senha)** e **guarde o código de recuperação** com o gestor.
+2. Abra pelo ícone e **crie sua conta (e-mail e senha)**. Depois, em *Ajustes → Gerar código de recuperação*, o gestor pode gerar e guardar um código (opcional).
 3. **Permita câmera e localização** quando o celular pedir.
 4. Em **Ajustes**, confira o nome do colaborador e preencha o nome da empresa (aparecem nos relatórios e nas fotos).
 5. Faça uma visita de teste: capturar GPS, tirar foto, enviar relatório.
@@ -166,10 +166,12 @@ Para poucos colaboradores não compensa: instalar pela tela inicial dá o mesmo 
 
 - **Primeiro acesso:** o colaborador informa **e-mail e senha** (mínimo 6 caracteres; o app recusa senhas fáceis como 123456). Há um botão *Mostrar* para ver o que está digitando. O nome que vai nos relatórios começa igual ao e-mail (ex.: `joao.silva@…` vira “Joao Silva”) e pode ser mudado em *Ajustes*.
 - **Continua conectado:** depois do primeiro login o app abre direto neste celular, sem pedir senha, até o colaborador tocar em *Ajustes → Sair*. Ao entrar de novo, o e-mail já vem preenchido e o cursor vai para a senha. O navegador e o celular também podem oferecer salvar e preencher a senha (gerenciador de senhas).
-- **Código de recuperação:** aparece uma única vez, logo após criar a conta. O gestor deve guardá-lo (botões *Copiar* / *Enviar*). Em “Esqueci a senha”, ele permite criar uma senha nova **sem perder as visitas**; depois disso um código novo é gerado e o antigo deixa de valer.
+- **Sem tela de código:** nenhum código aparece no cadastro nem no login. O **código de recuperação é opcional** e só existe se a pessoa pedir.
+- **Gerar o código (opcional):** *Ajustes → Acesso → Gerar código de recuperação*. Pede a senha atual e mostra um código como `K7QM-4XNB-92PD` **uma única vez** (botões *Copiar* / *Enviar*), para o gestor guardar. Gerar um novo invalida o anterior. Só o hash fica guardado no aparelho.
+- **Esqueci a senha:** na tela de login, o link **“Esqueci a senha”** pede o código de recuperação e a senha nova, **sem perder as visitas**. O código usado deixa de valer (gere outro depois, se quiser). Se o celular **não tem** código, a tela explica que o único caminho é apagar os dados do app e restaurar um backup, e oferece o botão *Apagar os dados deste celular* (com dupla confirmação).
 - **Tentativas erradas:** depois de 5 erros o app espera 30 s, e a espera dobra a cada novo erro (até 32 min), mesmo se a página for recarregada. A mensagem não diz se o erro foi no e-mail ou na senha.
 - **Trocar e-mail ou senha:** *Ajustes → Acesso → E-mail / senha* (pede a senha atual; deixe a senha nova em branco para trocar só o e-mail).
-- **Quem já usava PIN (versão anterior):** na primeira abertura depois da atualização o app pede o PIN atual uma única vez e o colaborador cria e-mail e senha. As visitas e o código de recuperação continuam valendo.
+- **Quem já usava PIN (versão anterior):** na primeira abertura depois da atualização o app pede o PIN atual uma única vez e o colaborador cria e-mail e senha. As visitas continuam, e o código de recuperação que a conta já tinha continua valendo (“Esqueci o PIN” usa esse código).
 - **Sem a senha e sem o código:** a única saída é apagar os dados do app no celular e restaurar o último backup. O backup **não** leva a senha.
 
 > Limites: o e-mail **não é verificado** (não há servidor): ele só identifica o colaborador neste celular, e a senha só vale neste aparelho. Ela fica guardada como hash, mas os dados das visitas não são criptografados, e alguém com conhecimento técnico e acesso ao aparelho ainda poderia lê-los. Como o app **continua conectado**, quem pegar o celular já com o app aberto entra direto; peça ao colaborador para tocar em *Sair* se for emprestar ou perder o aparelho. Para login de verdade, controlado pelo gestor (criar e bloquear colaboradores), o caminho é um backend (ex.: Firebase Authentication).
@@ -190,7 +192,7 @@ Para poucos colaboradores não compensa: instalar pela tela inicial dá o mesmo 
 - **Backup completo (ZIP com fotos)**: um arquivo `.zip` com `dados.json` e as fotos em `fotos/`. Dá para abrir o ZIP em qualquer computador e ver as fotos. Leve em memória, mesmo com milhares de fotos (900 fotos ≈ 160 MB, gerado em segundos).
 - **Backup só das novidades**: leva apenas as visitas alteradas e as fotos novas desde o **último backup** (qualquer tipo). É bem menor. Para restaurar, restaure primeiro o completo e depois cada backup de novidades, na ordem. **Guarde todos os arquivos.** Visitas ou fotos *excluídas* depois do backup não são removidas ao restaurar.
 - **Restaurar** aceita o ZIP novo e também os backups `.json` do formato antigo. Visitas com o mesmo código são substituídas; as demais são mantidas.
-- O backup **não** leva a senha nem o código de recuperação.
+- O backup **não** leva a senha.
 
 ### Desempenho (medido)
 
