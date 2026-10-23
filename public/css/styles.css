@@ -346,7 +346,15 @@ details.sub summary { cursor: pointer; font-weight: 700; color: var(--azul); pad
 .lock-sub { margin: 6px 0 18px; font-size: 14px; color: var(--texto-2); }
 .lock-sub b { color: var(--texto); }
 .lock .fld { text-align: left; }
-.pin-input { font-size: 24px; font-weight: 800; letter-spacing: 10px; text-align: center; }
+.pw { position: relative; display: block; }
+.fld > .pw { margin-bottom: 0; font-size: 16px; font-weight: 400; color: inherit; }
+.pw input { padding-right: 96px; }
+.pw-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  min-height: 38px; padding: 0 12px; border: 0; border-radius: 8px;
+  background: var(--azul-claro); color: var(--azul);
+  font: inherit; font-size: 13px; font-weight: 800; cursor: pointer;
+}
 .lock-err { min-height: 20px; margin: 0 0 10px; font-size: 14px; font-weight: 700; color: var(--grafite); }
 .lock-err:not(:empty) { padding: 8px 10px; border-radius: 10px; background: var(--amarelo-claro); }
 .lock-link {

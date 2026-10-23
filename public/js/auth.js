@@ -1,6 +1,6 @@
-/* Login local por PIN: hash PBKDF2 (WebCrypto) guardado no IndexedDB, código de recuperação
+/* Login local por e-mail e senha: hash PBKDF2 (WebCrypto) guardado no IndexedDB, código de recuperação
  * e bloqueio progressivo após tentativas erradas. Protege o app contra acesso casual ao celular;
- * não é autenticação em servidor. */
+ * não é autenticação em servidor (o e-mail não é verificado, só identifica o colaborador). */
 window.Auth = (() => {
   const ITER = 150000;
   const MAX_FALHAS = 5;
@@ -8,6 +8,7 @@ window.Auth = (() => {
   const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
   const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   const newSalt = () => crypto.getRandomValues(new Uint8Array(16));
+  const normEmail = s => String(s || '').trim().toLowerCase();
 
   async function derive(secret, salt, iter = ITER) {
     const key = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, ['deriveBits']);
@@ -31,6 +32,7 @@ window.Auth = (() => {
 
   const get = () => DB.getMeta('auth');
   const waitOf = a => Math.max(0, (a.bloqueadoAte || 0) - Date.now());
+  const verify = async (a, secret) => same(await derive(secret, unb64(a.salt), a.iter), a.hash);
 
   // Após 5 erros: espera de 30 s, dobrando a cada novo erro (máx. 32 min).
   async function fail(a) {
@@ -47,52 +49,75 @@ window.Auth = (() => {
     return { ok: true };
   }
 
+  async function newPassword(a, senha) {
+    const salt = newSalt();
+    a.salt = b64(salt);
+    a.iter = ITER;
+    a.hash = await derive(senha, salt, ITER);
+  }
+
   return {
     get,
+    normEmail,
+    validEmail: s => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normEmail(s)),
+    // Conta criada antes do login por e-mail (só PIN): precisa migrar uma vez.
+    isLegacy: a => !!a && !a.email,
 
-    async setup(nome, pin) {
-      const salt = newSalt();
+    async setup(email, senha) {
       const recSalt = newSalt();
       const code = recoveryCode();
-      await DB.putMeta({
-        key: 'auth', nome, iter: ITER,
-        salt: b64(salt), hash: await derive(pin, salt),
-        recSalt: b64(recSalt), recHash: await derive(normCode(code), recSalt),
-        falhas: 0, bloqueadoAte: 0, criadoEm: new Date().toISOString(),
-      });
+      const a = { key: 'auth', email: normEmail(email), recSalt: b64(recSalt), recHash: await derive(normCode(code), recSalt), falhas: 0, bloqueadoAte: 0, criadoEm: new Date().toISOString() };
+      await newPassword(a, senha);
+      await DB.putMeta(a);
       return code;
     },
 
-    async check(pin) {
+    // Confere e-mail e senha juntos (a mensagem de erro não diz qual dos dois está errado).
+    async check(email, senha) {
       const a = await get();
       if (waitOf(a)) return { ok: false, waitMs: waitOf(a) };
-      return same(await derive(pin, unb64(a.salt), a.iter), a.hash) ? succeed(a) : fail(a);
+      const senhaOk = await verify(a, senha);
+      return senhaOk && normEmail(email) === a.email ? succeed(a) : fail(a);
     },
 
-    async changePin(pin) {
+    // Só a senha (telas em que o e-mail já é conhecido, como "Trocar senha").
+    async checkPassword(senha) {
       const a = await get();
-      const salt = newSalt();
-      a.salt = b64(salt);
-      a.iter = ITER;
-      a.hash = await derive(pin, salt, ITER);
-      await DB.putMeta(a);
+      return this.check(a.email, senha);
     },
 
-    // Código certo: grava o PIN novo e gera um código de recuperação novo (o antigo deixa de valer).
-    async resetWithRecovery(code, pin) {
+    // Troca o e-mail e/ou a senha (senha vazia = mantém a atual).
+    async update({ email, senha }) {
+      const a = await get();
+      if (email) a.email = normEmail(email);
+      if (senha) await newPassword(a, senha);
+      await DB.putMeta(a);
+      return a.email;
+    },
+
+    // Código certo: grava a senha nova e gera um código de recuperação novo (o antigo deixa de valer).
+    async resetWithRecovery(code, senha, email) {
       const a = await get();
       if (waitOf(a)) return { waitMs: waitOf(a) };
       if (!same(await derive(normCode(code), unb64(a.recSalt), a.iter), a.recHash)) return fail(a);
-      const salt = newSalt();
       const recSalt = newSalt();
       const novo = recoveryCode();
-      Object.assign(a, {
-        iter: ITER, salt: b64(salt), hash: await derive(pin, salt),
-        recSalt: b64(recSalt), recHash: await derive(normCode(novo), recSalt),
-        falhas: 0, bloqueadoAte: 0,
-      });
+      if (email) a.email = normEmail(email);
+      await newPassword(a, senha);
+      Object.assign(a, { recSalt: b64(recSalt), recHash: await derive(normCode(novo), recSalt), falhas: 0, bloqueadoAte: 0 });
       await DB.putMeta(a);
       return { code: novo };
+    },
+
+    // Migração de quem já usava PIN: confere o PIN antigo e define e-mail e senha (o código de recuperação continua valendo).
+    async migrate(pin, email, senha) {
+      const a = await get();
+      if (waitOf(a)) return { ok: false, waitMs: waitOf(a) };
+      if (!(await verify(a, pin))) return fail(a);
+      a.email = normEmail(email);
+      delete a.nome;
+      await newPassword(a, senha);
+      return succeed(a);
     },
   };
 })();

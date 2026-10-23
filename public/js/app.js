@@ -1200,9 +1200,9 @@
 
       <section class="sec">
         <h2>Acesso</h2>
-        <p class="small muted">Entrou como <b>${esc(auth?.nome || '')}</b>. O app pede o PIN de novo após 15 min sem uso.</p>
+        <p class="small muted">Entrou como <b>${esc(auth?.email || '')}</b>. O app fica conectado neste celular até você tocar em <b>Sair</b>.</p>
         <div class="btn-row">
-          <button class="btn btn-ghost" id="btn-pin" type="button">${icon('edit', 18)} Trocar PIN</button>
+          <button class="btn btn-ghost" id="btn-pin" type="button">${icon('edit', 18)} E-mail / senha</button>
           <button class="btn btn-dark" id="btn-lock" type="button">${icon('lock', 18)} Sair</button>
         </div>
       </section>
@@ -1265,24 +1265,22 @@
     $('#btn-wipe').onclick = async () => {
       if (!(await askConfirm('Apagar TODAS as visitas, fotos e ajustes deste celular?', 'Apagar tudo'))) return;
       if (!(await askConfirm('Tem certeza? Faça um backup antes. Essa ação não pode ser desfeita.', 'Sim, apagar'))) return;
-      await DB.clearAll(); // inclui o PIN: o próximo acesso volta ao primeiro uso
+      await DB.clearAll(); // inclui o acesso: o próximo uso volta ao primeiro acesso
       history.replaceState(null, '', '#/');
       lock();
     };
   }
 
-  // ---------- login (PIN no aparelho) ----------
-  const LOCK_MS = 15 * 60 * 1000;
+  // ---------- login (e-mail e senha neste aparelho) ----------
+  // Depois do primeiro login o app continua conectado neste celular até o colaborador tocar em "Sair".
   let locked = true;
-  let lastAct = 0;
-  const storedAct = () => { try { return +localStorage.getItem('ultimaAtividade') || 0; } catch { return 0; } };
-  const touch = (force = false) => {
-    const now = Date.now();
-    if (!force && now - lastAct < 5000) return;
-    lastAct = now;
-    try { localStorage.setItem('ultimaAtividade', String(now)); } catch { /* sem armazenamento: pede PIN ao reabrir */ }
-  };
   const waitText = ms => (ms >= 60000 ? `${Math.ceil(ms / 60000)} min` : `${Math.ceil(ms / 1000)} s`);
+  const nomeDoEmail = e => String(e).split('@')[0].split(/[._+-]+/).filter(Boolean).map(s => s[0].toUpperCase() + s.slice(1)).join(' ');
+  const SENHAS_FRACAS = new Set(['123456', '1234567', '12345678', '123456789', '111111', '000000', 'senha1', 'senha123', 'password', 'qwerty', 'abcdef', 'abc123']);
+  const getSession = () => { try { return localStorage.getItem('sessao'); } catch { return null; } };
+  const setSession = v => {
+    try { if (v) localStorage.setItem('sessao', v); else localStorage.removeItem('sessao'); } catch { /* sem armazenamento: pede login ao reabrir */ }
+  };
 
   async function lock() {
     if (locked) return;
@@ -1292,7 +1290,7 @@
       flushPending = null;
       try { await f(); } catch (e) { console.error(e); }
     }
-    try { localStorage.removeItem('ultimaAtividade'); } catch { /* ignora */ }
+    setSession(null);
     $$('.viewer, .actionbar, .dialog-bg').forEach(e => e.remove());
     document.body.classList.remove('form-mode');
     view.innerHTML = '';
@@ -1301,10 +1299,11 @@
     showLock();
   }
 
-  function unlock() {
+  async function unlock() {
+    const a = await Auth.get();
+    setSession(a?.email || null);
     $('#lock')?.remove();
     locked = false;
-    touch(true);
     router();
   }
 
@@ -1315,13 +1314,16 @@
     ${body}
   </div>`;
 
-  const pinField = (id, label, ac) =>
-    `<label class="fld"><span>${label}</span><input id="${id}" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="${ac}"></label>`;
+  const emailField = value =>
+    `<label class="fld"><span>E-mail</span><input id="l-email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="nome@empresa.com" value="${esc(value || '')}"></label>`;
+  const passField = (id, label, ac) =>
+    `<label class="fld"><span>${label}</span><span class="pw"><input id="${id}" type="password" autocomplete="${ac}" autocapitalize="off" autocorrect="off" spellcheck="false"><button type="button" class="pw-toggle" data-for="${id}">Mostrar</button></span></label>`;
 
   async function showLock(mode) {
     const auth = await Auth.get();
     const cfg = await getSettings();
-    mode ??= auth ? 'login' : 'setup';
+    const legacy = Auth.isLegacy(auth); // conta antiga, só com PIN
+    mode ??= !auth ? 'setup' : legacy ? 'migrate' : 'login';
     let el = $('#lock');
     if (!el) {
       el = document.createElement('div');
@@ -1332,33 +1334,39 @@
 
     const views = {
       setup: {
-        sub: 'Primeiro acesso: crie um PIN para proteger as visitas deste celular.',
-        body: `<label class="fld"><span>Seu nome</span><input id="l-nome" value="${esc(cfg.colaborador)}" autocapitalize="words" autocomplete="name"></label>`
-          + pinField('l-pin', 'Crie um PIN (4 a 6 números)', 'new-password')
-          + pinField('l-pin2', 'Repita o PIN', 'new-password'),
-        btn: 'Criar PIN e entrar',
+        sub: 'Primeiro acesso neste celular: informe seu e-mail e crie uma senha.',
+        body: emailField('') + passField('l-pass', 'Crie uma senha (mínimo 6 caracteres)', 'new-password'),
+        btn: 'Criar conta e entrar',
       },
       login: {
-        sub: `Olá, <b>${esc(auth?.nome)}</b>! Digite seu PIN para entrar.`,
-        body: pinField('l-pin', 'PIN', 'current-password'),
+        sub: 'Entre com seu e-mail e senha.',
+        body: emailField(auth?.email) + passField('l-pass', 'Senha', 'current-password'),
         btn: 'Entrar',
-        link: ['recover', 'Esqueci o PIN'],
+        link: ['recover', 'Esqueci a senha'],
       },
       recover: {
-        sub: 'Digite o código de recuperação (fica com o gestor) e crie um PIN novo. As visitas não são apagadas.',
+        sub: 'Digite o código de recuperação (fica com o gestor) e crie uma senha nova. As visitas não são apagadas.',
         body: '<label class="fld"><span>Código de recuperação</span><input id="l-code" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX"></label>'
-          + pinField('l-pin', 'Novo PIN (4 a 6 números)', 'new-password')
-          + pinField('l-pin2', 'Repita o novo PIN', 'new-password'),
-        btn: 'Criar novo PIN',
-        link: ['login', 'Voltar'],
+          + (legacy ? emailField('') : '')
+          + passField('l-pass', 'Nova senha (mínimo 6 caracteres)', 'new-password'),
+        btn: 'Criar nova senha',
+        link: [legacy ? 'migrate' : 'login', 'Voltar'],
       },
       change: {
-        sub: 'Trocar o PIN deste celular.',
-        body: pinField('l-old', 'PIN atual', 'current-password')
-          + pinField('l-pin', 'Novo PIN (4 a 6 números)', 'new-password')
-          + pinField('l-pin2', 'Repita o novo PIN', 'new-password'),
-        btn: 'Salvar novo PIN',
+        sub: 'Trocar o e-mail ou a senha deste celular.',
+        body: emailField(auth?.email)
+          + passField('l-old', 'Senha atual', 'current-password')
+          + passField('l-pass', 'Nova senha (deixe em branco para manter)', 'new-password'),
+        btn: 'Salvar',
         link: ['cancel', 'Cancelar'],
+      },
+      migrate: {
+        sub: 'Atualização: o app agora usa e-mail e senha no lugar do PIN. Digite seu PIN atual e crie seu acesso.',
+        body: passField('l-old', 'PIN atual', 'current-password')
+          + emailField('')
+          + passField('l-pass', 'Nova senha (mínimo 6 caracteres)', 'new-password'),
+        btn: 'Atualizar e entrar',
+        link: ['recover', 'Esqueci o PIN'],
       },
     };
     const vw = views[mode];
@@ -1371,52 +1379,85 @@
       ${vw.link ? `<button type="button" class="lock-link" data-go="${vw.link[0]}">${vw.link[1]}</button>` : ''}`);
 
     const val = id => $(`#${id}`, el)?.value.trim() || '';
+    const raw = id => $(`#${id}`, el)?.value || ''; // senhas não são cortadas
     const err = m => { $('#lock-err', el).textContent = m; };
     const blockedMsg = ms => `Muitas tentativas erradas. Aguarde ${waitText(ms)} e tente de novo.`;
-    const newPin = () => {
-      const p = val('l-pin');
-      if (!/^\d{4,6}$/.test(p)) { err('O PIN deve ter de 4 a 6 números.'); return null; }
-      if (p !== val('l-pin2')) { err('Os dois PINs não são iguais.'); return null; }
-      if (/^(\d)\1+$/.test(p) || '01234567890'.includes(p) || '09876543210'.includes(p)) {
-        err('PIN muito fácil. Evite números repetidos ou em sequência.');
-        return null;
-      }
+    const goodEmail = () => {
+      const e = val('l-email');
+      if (!Auth.validEmail(e)) { err('Digite um e-mail válido, como nome@empresa.com.'); return null; }
+      return Auth.normEmail(e);
+    };
+    // opcional = true: campo vazio é aceito e devolve '' (mantém a senha atual)
+    const goodPass = (opcional = false) => {
+      const p = raw('l-pass');
+      if (!p && opcional) return '';
+      if (p.length < 6) { err('A senha deve ter pelo menos 6 caracteres.'); return null; }
+      if (p.length > 64) { err('A senha pode ter no máximo 64 caracteres.'); return null; }
+      if (/^(.)\1+$/s.test(p) || SENHAS_FRACAS.has(p.toLowerCase())) { err('Senha muito fácil. Escolha outra.'); return null; }
       return p;
+    };
+    // o nome que vai nos relatórios começa igual ao e-mail e pode ser mudado em Ajustes
+    const nomePadrao = async email => {
+      if (!cfg.colaborador) { cfg.colaborador = nomeDoEmail(email); await DB.putMeta(cfg); }
     };
 
     async function submit() {
       err('');
       if (mode === 'setup') {
-        const nome = val('l-nome');
-        if (!nome) { err('Informe seu nome.'); return; }
-        const p = newPin();
-        if (!p) return;
-        const code = await Auth.setup(nome, p);
-        if (!cfg.colaborador) { cfg.colaborador = nome; await DB.putMeta(cfg); }
-        showCode(code, nome);
+        const email = goodEmail();
+        if (!email) return;
+        const p = goodPass();
+        if (p === null) return;
+        const code = await Auth.setup(email, p);
+        await nomePadrao(email);
+        showCode(code, email);
       } else if (mode === 'login') {
-        const r = await Auth.check(val('l-pin'));
-        if (r.ok) { unlock(); return; }
-        $('#l-pin', el).value = '';
-        err(r.waitMs ? blockedMsg(r.waitMs) : `PIN incorreto. Restam ${r.restantes} tentativa(s) antes de bloquear.`);
+        const r = await Auth.check(val('l-email'), raw('l-pass'));
+        if (r.ok) { await unlock(); return; }
+        $('#l-pass', el).value = '';
+        err(r.waitMs ? blockedMsg(r.waitMs) : `E-mail ou senha incorretos. Restam ${r.restantes} tentativa(s) antes de bloquear.`);
       } else if (mode === 'recover') {
-        const p = newPin();
-        if (!p) return;
-        const r = await Auth.resetWithRecovery(val('l-code'), p);
-        if (r.code) { showCode(r.code, auth.nome); return; }
+        const email = legacy ? goodEmail() : null;
+        if (legacy && !email) return;
+        const p = goodPass();
+        if (p === null) return;
+        const r = await Auth.resetWithRecovery(val('l-code'), p, email);
+        if (r.code) {
+          if (email) await nomePadrao(email);
+          showCode(r.code, email || auth.email);
+          return;
+        }
         err(r.waitMs ? blockedMsg(r.waitMs) : 'Código de recuperação incorreto.');
       } else if (mode === 'change') {
-        const p = newPin();
-        if (!p) return;
-        const r = await Auth.check(val('l-old'));
-        if (!r.ok) { err(r.waitMs ? blockedMsg(r.waitMs) : 'PIN atual incorreto.'); return; }
-        await Auth.changePin(p);
+        const email = goodEmail();
+        if (!email) return;
+        const nova = goodPass(true);
+        if (nova === null) return;
+        const r = await Auth.checkPassword(raw('l-old'));
+        if (!r.ok) { err(r.waitMs ? blockedMsg(r.waitMs) : 'Senha atual incorreta.'); return; }
+        setSession(await Auth.update({ email, senha: nova }));
         el.remove();
-        toast('PIN alterado ✓');
+        toast('Acesso atualizado ✓');
+        if (location.hash === '#/config') renderConfig();
+      } else if (mode === 'migrate') {
+        const email = goodEmail();
+        if (!email) return;
+        const p = goodPass();
+        if (p === null) return;
+        const r = await Auth.migrate(raw('l-old'), email, p);
+        if (!r.ok) { err(r.waitMs ? blockedMsg(r.waitMs) : `PIN incorreto. Restam ${r.restantes} tentativa(s) antes de bloquear.`); return; }
+        await nomePadrao(email);
+        await unlock();
       }
     }
 
-    $$('.pin-input', el).forEach(i => i.addEventListener('input', () => { i.value = digits(i.value).slice(0, 6); }));
+    $$('.pw-toggle', el).forEach(b => b.addEventListener('click', () => {
+      const i = $(`#${b.dataset.for}`, el);
+      const mostrar = i.type === 'password';
+      i.type = mostrar ? 'text' : 'password';
+      b.textContent = mostrar ? 'Ocultar' : 'Mostrar';
+      i.focus();
+    }));
     $('[data-go]', el)?.addEventListener('click', e => {
       const go = e.currentTarget.dataset.go;
       if (go === 'cancel') el.remove(); else showLock(go);
@@ -1430,14 +1471,14 @@
       try { await submit(); } catch (ex) { console.error(ex); err('Erro: ' + ex.message); }
       finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
     });
-    $('input', el)?.focus();
+    [...el.querySelectorAll('input')].find(i => !i.value)?.focus(); // com e-mail já preenchido, vai direto para a senha
   }
 
-  function showCode(code, nome) {
+  function showCode(code, email) {
     const el = $('#lock');
-    const text = `Código de recuperação do app ${C.appNome} (${nome}): ${code}`;
+    const text = `Código de recuperação do app ${C.appNome} (${email}): ${code}`;
     el.innerHTML = lockCard('Código de recuperação',
-      'Guarde este código com o gestor. Ele é a única forma de criar um PIN novo sem perder as visitas. Ele não aparece de novo.', `
+      'Guarde este código com o gestor. Ele é a única forma de criar uma senha nova sem perder as visitas. Ele não aparece de novo.', `
       <div class="code-box">${esc(code)}</div>
       <div class="btn-row">
         <button class="btn btn-ghost" id="c-copy" type="button">${icon('copy', 18)} Copiar</button>
@@ -1461,15 +1502,9 @@
 
   async function start() {
     const auth = await Auth.get();
-    if (auth && Date.now() - storedAct() < LOCK_MS) unlock();
+    if (auth?.email && getSession() === auth.email) unlock(); // continua conectado
     else showLock();
   }
-
-  ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
-    document.addEventListener(ev, () => { if (!locked) touch(); }, { capture: true, passive: true }));
-  const checkIdle = () => { if (!locked && Date.now() - lastAct > LOCK_MS) lock(); };
-  setInterval(checkIdle, 30000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkIdle(); });
 
   // ---------- início ----------
   applyColors();
