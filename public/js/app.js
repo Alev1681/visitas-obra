@@ -1225,7 +1225,7 @@
 
       <section class="sec">
         <h2>Acesso</h2>
-        <p class="small muted">Entrou como <b>${esc(auth?.email || '')}</b>. O app fica conectado neste celular até você tocar em <b>Sair</b>.</p>
+        <p class="small muted">Entrou como <b>${esc(auth?.email || '')}</b>. O login fica lembrado neste celular enquanto você usa o app; se ele ficar fechado por mais de ${SESSAO_MIN} min, pede a senha de novo. Para sair na hora, toque em <b>Sair</b>.</p>
         <div class="btn-row">
           <button class="btn btn-ghost" id="btn-pin" type="button">${icon('edit', 18)} E-mail / senha</button>
           <button class="btn btn-dark" id="btn-lock" type="button">${icon('lock', 18)} Sair</button>
@@ -1307,19 +1307,31 @@
   }
 
   // ---------- login (e-mail e senha neste aparelho) ----------
-  // Depois do primeiro login o app continua conectado neste celular até o colaborador tocar em "Sair".
+  // A tela tem duas abas: "Entrar" e "Criar conta" (uma conta por celular; se já existe, só entra).
+  // O login fica lembrado neste celular: com o app aberto ele continua conectado; fechado ou em
+  // segundo plano por mais de C.sessaoMinutos, o próximo uso pede a senha de novo (logoff automático).
   // Nenhuma tela de código aparece no cadastro nem no login: o código de recuperação é opcional e
   // só é gerado quando a pessoa pede, em Ajustes.
   let locked = true;
   const waitText = ms => (ms >= 60000 ? `${Math.ceil(ms / 60000)} min` : `${Math.ceil(ms / 1000)} s`);
   const nomeDoEmail = e => String(e).split('@')[0].split(/[._+-]+/).filter(Boolean).map(s => s[0].toUpperCase() + s.slice(1)).join(' ');
   const SENHAS_FRACAS = new Set(['123456', '1234567', '12345678', '123456789', '111111', '000000', 'senha1', 'senha123', 'password', 'qwerty', 'abcdef', 'abc123']);
-  const getSession = () => { try { return localStorage.getItem('sessao'); } catch { return null; } };
-  const setSession = v => {
-    try { if (v) localStorage.setItem('sessao', v); else localStorage.removeItem('sessao'); } catch { /* sem armazenamento: pede login ao reabrir */ }
+  const SESSAO_MIN = C.sessaoMinutos || 30;
+  const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
+  const lsSet = (k, v) => {
+    try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* sem armazenamento: pede login ao reabrir */ }
   };
+  const getSession = () => lsGet('sessao');
+  const setSession = v => { lsSet('sessao', v || null); lsSet('sessaoVisto', v ? String(Date.now()) : null); };
+  // 'sessaoVisto' = último momento em que o app estava aberto na tela
+  const marcarUso = () => { if (!locked && getSession() && document.visibilityState === 'visible') lsSet('sessaoVisto', String(Date.now())); };
+  const sessaoExpirada = () => {
+    const t = Number(lsGet('sessaoVisto'));
+    return !t || Date.now() - t > SESSAO_MIN * 60000;
+  };
+  const AVISO_EXPIROU = `Por segurança você saiu automaticamente: o app ficou fechado por mais de ${SESSAO_MIN} min. Entre de novo.`;
 
-  async function lock() {
+  async function lock(aviso) {
     if (locked) return;
     locked = true;
     if (flushPending) {
@@ -1333,7 +1345,7 @@
     view.innerHTML = '';
     objectUrls.forEach(u => URL.revokeObjectURL(u));
     objectUrls = [];
-    showLock();
+    showLock(undefined, aviso);
   }
 
   async function unlock() {
@@ -1344,9 +1356,10 @@
     router();
   }
 
-  const lockCard = (title, sub, body) => `<div class="lock-card">
+  const lockCard = (title, sub, body, topo = '') => `<div class="lock-card">
     <img class="lock-logo" src="icons/icon.svg" alt="">
     <h1>${esc(title)}</h1>
+    ${topo}
     <p class="lock-sub">${sub}</p>
     ${body}
   </div>`;
@@ -1356,12 +1369,13 @@
   const passField = (id, label, ac) =>
     `<label class="fld"><span>${label}</span><span class="pw"><input id="${id}" type="password" autocomplete="${ac}" autocapitalize="off" autocorrect="off" spellcheck="false"><button type="button" class="pw-toggle" data-for="${id}">Mostrar</button></span></label>`;
 
-  async function showLock(mode) {
+  async function showLock(mode, aviso) {
     const auth = await Auth.get();
     const cfg = await getSettings();
     const legacy = Auth.isLegacy(auth); // conta antiga, só com PIN
     const temCodigo = Auth.hasRecovery(auth);
     mode ??= !auth ? 'setup' : legacy ? 'migrate' : 'login';
+    const abas = !legacy && (mode === 'login' || mode === 'setup');
     let el = $('#lock');
     if (!el) {
       el = document.createElement('div');
@@ -1372,16 +1386,25 @@
 
     // links: lista de [destino, texto]
     const views = {
-      setup: {
-        sub: 'Primeiro acesso neste celular: informe seu e-mail e crie uma senha.',
+      // uma conta por celular: se ela já existe, a aba "Criar conta" só leva para "Entrar"
+      setup: auth ? {
+        sub: `Este celular já tem uma conta (<b>${esc(auth.email)}</b>). É só entrar com o e-mail e a senha dela.`,
+        body: '',
+        links: [['login', 'Entrar com essa conta']],
+      } : {
+        sub: 'Crie sua conta neste celular: informe seu e-mail e uma senha.',
         body: emailField('') + passField('l-pass', 'Crie uma senha (mínimo 6 caracteres)', 'new-password'),
         btn: 'Criar conta e entrar',
       },
-      login: {
+      login: auth ? {
         sub: 'Entre com seu e-mail e senha.',
-        body: emailField(auth?.email) + passField('l-pass', 'Senha', 'current-password'),
+        body: emailField(auth.email) + passField('l-pass', 'Senha', 'current-password'),
         btn: 'Entrar',
         links: [['recover', 'Esqueci a senha']],
+      } : {
+        sub: 'Ainda não existe conta neste celular. Crie a sua para começar.',
+        body: '',
+        links: [['setup', 'Criar conta']],
       },
       recover: temCodigo ? {
         sub: 'Digite o código de recuperação que foi gerado em Ajustes e crie uma senha nova. As visitas não são apagadas.',
@@ -1419,13 +1442,17 @@
       },
     };
     const vw = views[mode];
+    const tabs = abas ? `<div class="lock-tabs" role="tablist">
+        <button type="button" role="tab" data-go="login" aria-selected="${mode === 'login'}">Entrar</button>
+        <button type="button" role="tab" data-go="setup" aria-selected="${mode === 'setup'}">Criar conta</button>
+      </div>` : '';
     el.innerHTML = lockCard(C.appNome, vw.sub, `
       <form id="lock-form" novalidate>
         ${vw.body}
         <p class="lock-err" id="lock-err" role="alert"></p>
         ${vw.btn ? `<button class="btn btn-primary wide" type="submit">${vw.btn}</button>` : ''}
       </form>
-      ${(vw.links || []).map(([go, t]) => `<button type="button" class="lock-link" data-go="${go}">${t}</button>`).join('')}`);
+      ${(vw.links || []).map(([go, t]) => `<button type="button" class="lock-link" data-go="${go}">${t}</button>`).join('')}`, tabs);
 
     const val = id => $(`#${id}`, el)?.value.trim() || '';
     const raw = id => $(`#${id}`, el)?.value || ''; // senhas não são cortadas
@@ -1535,6 +1562,7 @@
       try { await submit(); } catch (ex) { console.error(ex); err('Erro: ' + ex.message); }
       finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = label; } }
     });
+    if (aviso) err(aviso);
     [...el.querySelectorAll('input')].find(i => !i.value)?.focus(); // com e-mail já preenchido, vai direto para a senha
   }
 
@@ -1568,9 +1596,21 @@
 
   async function start() {
     const auth = await Auth.get();
-    if (auth?.email && getSession() === auth.email) unlock(); // continua conectado
-    else showLock();
+    const lembrado = auth?.email && getSession() === auth.email;
+    if (lembrado && !sessaoExpirada()) { unlock(); return; } // continua conectado
+    setSession(null);
+    showLock(undefined, lembrado ? AVISO_EXPIROU : '');
   }
+
+  // Enquanto o app está na tela, renova a sessão; ao fechar ou ir para segundo plano, guarda a hora.
+  // Ao voltar depois de mais de C.sessaoMinutos, faz o logoff.
+  setInterval(marcarUso, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!locked && sessaoExpirada()) lock(AVISO_EXPIROU);
+    else marcarUso();
+  });
+  window.addEventListener('pagehide', marcarUso);
 
   // ---------- início ----------
   applyColors();

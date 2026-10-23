@@ -6,6 +6,8 @@ window.CONFIG = {
   appNome: 'Visitas de Obra',
   empresa: 'Minha Empresa', // aparece no cabeçalho dos relatórios (pode ser trocado em Ajustes)
   versao: '1.0.0',
+  // Logoff automático: com o app fechado (ou em segundo plano) por mais que isso, pede a senha de novo.
+  sessaoMinutos: 30,
 
   // Cores da marca (Cores.png)
   cores: {
