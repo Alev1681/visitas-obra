@@ -1,5 +1,6 @@
 /* Visitas de Obra — cores da marca (Cores.png): azul #024089, amarelo #ffcc00, cinza #3d3d3c, grafite #2c2c2c, branco */
 :root {
+  color-scheme: only light; /* sem escurecimento automático do navegador: mantém azul e amarelo da marca */
   --azul: #024089;
   --amarelo: #ffcc00;
   --cinza: #3d3d3c;
