@@ -70,7 +70,7 @@ O carro é uma **vitrine móvel**: precisa estar limpo, com adesivos íntegros e
    - Anotar **etapa da obra**, porque ela indica *quando* cada produto será comprado.
    - Definir **próximo passo** e **data de retorno** antes de sair.
 4. **Enviar o relatório** pelo botão “Relatório” (WhatsApp/e-mail para o gestor) logo após a visita.
-5. **Fim do dia:** KM final. Uma vez por semana, **Exportar planilha** e **Backup** (Ajustes); depois do primeiro backup completo, o "só das novidades" é bem menor e mais rápido. Envie o arquivo ZIP para o gestor ou para o Drive.
+5. **Fim do dia:** KM final. Uma vez por semana, **Exportar planilha (Excel)** e **Backup** (Ajustes); depois do primeiro backup completo, o "só das novidades" é bem menor e mais rápido. Envie o arquivo ZIP para o gestor ou para o Drive.
 
 ## 7. Indicadores para acompanhar (performance)
 
@@ -83,7 +83,7 @@ O carro é uma **vitrine móvel**: precisa estar limpo, com adesivos íntegros e
 | Obras “quentes” convertidas em proposta | acompanhar mês a mês |
 | Custo por visita (km + material de MKT) | acompanhar mês a mês |
 
-A planilha exportada pelo app (CSV, abre no Excel/Google Planilhas) traz todos os dados para montar esses indicadores.
+A planilha exportada pelo app (**Excel .xlsx**, abre no Excel, no Google Planilhas e no celular, com os acentos corretos) traz todos os dados para montar esses indicadores. O CSV fica como alternativa para outros programas, mas alguns visualizadores de celular mostram os acentos quebrados: prefira o Excel.
 
 ## 8. LGPD (dados de contato)
 

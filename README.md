@@ -15,7 +15,7 @@ App para registrar visitas a obras: **contato, endereço, localização GPS/Goog
 - **Relatório**: compartilha texto + fotos pelo WhatsApp/e-mail com 1 toque.
 - **Retornos**: lista de atrasados/hoje/próximos, **rota do dia** no Google Maps e evento no **Google Agenda**.
 - **Checklist de saída** diário (EPI, celular, material de MKT, veículo) + **KM do dia**.
-- **Exportar planilha** (CSV para Excel) e **backup/restauração** em ZIP, com fotos, completo ou só das novidades.
+- **Exportar planilha em Excel (.xlsx)**, com acentos corretos em qualquer programa (Excel, Google Planilhas, visualizador do celular), cabeçalho colorido, linha congelada e filtros. Também há **CSV** para outros programas e **backup/restauração** em ZIP, com fotos, completo ou só das novidades.
 - **Rápido com muitos dados**: a lista usa miniaturas e carrega 40 visitas por vez (testado com 2000 visitas e 6000 fotos).
 - Cores da marca (`Cores.png`): azul `#024089`, amarelo `#ffcc00`, cinzas `#3d3d3c` / `#2c2c2c` e branco.
 
@@ -33,6 +33,7 @@ App/
 │   ├── js/db.js               banco local (IndexedDB)
 │   ├── js/photos.js           compactação, carimbo e miniaturas das fotos
 │   ├── js/zip.js              leitura e escrita de ZIP (backup)
+│   ├── js/xlsx.js             gerador de planilha Excel (.xlsx)
 │   ├── js/auth.js             login por e-mail e senha (hash, código de recuperação opcional, bloqueio por tentativas)
 │   ├── js/app.js              telas e lógica
 │   └── icons/                 ícones do app

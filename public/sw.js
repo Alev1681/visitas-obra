@@ -1,6 +1,6 @@
 /* Service worker: deixa o app funcionando sem internet (obras costumam ter sinal fraco).
  * Ao publicar uma nova versão, troque o número em CACHE. */
-const CACHE = 'visitas-obra-v8';
+const CACHE = 'visitas-obra-v9';
 // A página entra só como './' (sem 'index.html'): alguns hosts redirecionam /index.html → /,
 // e uma resposta redirecionada não pode ser usada para navegação offline.
 const ASSETS = [
@@ -10,6 +10,7 @@ const ASSETS = [
   'js/db.js',
   'js/photos.js',
   'js/zip.js',
+  'js/xlsx.js',
   'js/auth.js',  'js/app.js',
   'manifest.webmanifest',
   'icons/icon.svg',

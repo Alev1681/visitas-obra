@@ -1085,7 +1085,9 @@
     return true;
   }
 
-  async function exportCSV() {
+  // Monta cabeçalho e linhas uma vez; a mesma tabela vira Excel (.xlsx) ou CSV.
+  // Números (latitude, KM, nº de fotos…) vão como número, o resto como texto.
+  async function montarPlanilha() {
     const [visits, count] = await Promise.all([DB.allVisits(), DB.photoCounts()]);
     const head = ['Data da visita', 'Status', 'Interesse', 'Obra', 'Construtora/cliente', 'Tipo', 'Etapa', 'Contato', 'Cargo', 'Telefone', 'E-mail',
       'Outros contatos', 'CEP', 'Logradouro', 'Número', 'Complemento', 'Bairro', 'Cidade', 'UF', 'Referência', 'Latitude', 'Longitude',
@@ -1094,17 +1096,33 @@
       const cs = (v.contatos || []).filter(c => c.nome || c.telefone || c.email);
       const c = cs[0] || {};
       const e = v.endereco || {};
+      const km = String(v.km ?? '').trim();
       return [fmtDT(v.visitDate), v.status, INTERESSE[v.interesse] || '', v.obra?.nome, v.obra?.construtora, v.obra?.tipo, v.obra?.etapa,
         c.nome, c.cargo, c.telefone, c.email, cs.slice(1).map(x => [x.nome, x.cargo, x.telefone, x.email].filter(Boolean).join(' / ')).join(' | '),
         e.cep, e.logradouro, e.numero, e.complemento, e.bairro, e.cidade, e.uf, e.referencia,
-        hasCoords(v) ? String(v.local.lat).replace('.', ',') : '', hasCoords(v) ? String(v.local.lng).replace('.', ',') : '',
-        v.local?.accuracy ?? '', mapsHref(v), (v.materiais || []).join(', '), fmtDate(v.retorno), v.proximosPassos, v.observacoes, v.km,
-        count.get(v.id) || 0, v.autor];
+        hasCoords(v) ? v.local.lat : '', hasCoords(v) ? v.local.lng : '',
+        v.local?.accuracy ?? '', mapsHref(v), (v.materiais || []).join(', '), fmtDate(v.retorno), v.proximosPassos, v.observacoes,
+        km !== '' && Number.isFinite(+km) ? +km : km, count.get(v.id) || 0, v.autor];
     });
-    const q = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
+    return { head, rows };
+  }
+
+  // Planilha em Excel (.xlsx): a codificação vai dentro do arquivo, então os acentos saem certos em qualquer programa.
+  async function exportXlsx() {
+    const { head, rows } = await montarPlanilha();
+    const blob = await Xlsx.build(head, rows, { nome: 'Visitas' });
+    const entregue = await saveFile(blob, `visitas-obra-${today()}.xlsx`);
+    if (entregue) toast(`${rows.length} visita(s) exportada(s) em Excel`);
+  }
+
+  // CSV para quem precisa dele em outros programas. Atenção: alguns visualizadores de celular não reconhecem
+  // UTF-8 e mostram os acentos quebrados; prefira o Excel (.xlsx).
+  async function exportCSV() {
+    const { head, rows } = await montarPlanilha();
+    const q = v => `"${String(typeof v === 'number' ? String(v).replace('.', ',') : v ?? '').replace(/"/g, '""')}"`;
     const csv = '﻿' + [head, ...rows].map(r => r.map(q).join(';')).join('\r\n');
-    await saveFile(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `visitas-obra-${today()}.csv`);
-    toast(`${rows.length} visita(s) exportada(s)`);
+    const entregue = await saveFile(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `visitas-obra-${today()}.csv`);
+    if (entregue) toast(`${rows.length} visita(s) exportada(s) em CSV`);
   }
 
   // Backup em ZIP: dados.json + fotos/*.jpg. As fotos entram como Blob (sem copiar para a memória),
@@ -1222,7 +1240,8 @@
         <h2>Dados e backup</h2>
         <p class="small muted">Os dados ficam guardados neste celular e funcionam sem internet. Faça backup toda semana e envie para o gestor ou para o Google Drive. O backup é um arquivo ZIP: as fotos ficam dentro e abrem em qualquer computador.</p>
         <div class="stack">
-          <button class="btn btn-blue wide" id="btn-csv" type="button">${icon('download')} Exportar planilha (Excel/CSV)</button>
+          <button class="btn btn-blue wide" id="btn-xlsx" type="button">${icon('download')} Exportar planilha (Excel)</button>
+          <button class="btn btn-ghost wide" id="btn-csv" type="button">${icon('download')} Exportar CSV (outros programas)</button>
           <button class="btn btn-ghost wide" id="btn-bkp" type="button">${icon('download')} Backup completo (ZIP com fotos)</button>
           ${bk?.ultimo ? `<button class="btn btn-ghost wide" id="btn-bkp2" type="button">${icon('download')} Backup só das novidades (menor)</button>` : ''}
           <label class="btn btn-ghost wide">${icon('upload')} Restaurar backup<input id="in-bkp" class="vh" type="file" accept=".zip,application/zip,.json,application/json"></label>
@@ -1257,6 +1276,7 @@
     $('#btn-pin').onclick = () => showLock('change');
     $('#btn-lock').onclick = () => lock();
     $('#btn-rec').onclick = () => showLock('gerar');
+    $('#btn-xlsx').onclick = () => exportXlsx().catch(e => toast('Erro ao exportar: ' + e.message));
     $('#btn-csv').onclick = () => exportCSV().catch(e => toast('Erro ao exportar: ' + e.message));
     $('#btn-bkp').onclick = () => exportBackup(false).catch(e => toast('Erro no backup: ' + e.message));
     $('#btn-bkp2')?.addEventListener('click', () => exportBackup(true).catch(e => toast('Erro no backup: ' + e.message)));
