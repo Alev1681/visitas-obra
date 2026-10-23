@@ -175,7 +175,7 @@ details.sub summary { cursor: pointer; font-weight: 700; color: var(--azul); pad
 .ph img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
 .ph span {
   position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 6px 4px;
-  font-size: 10px; font-weight: 700; color: var(--branco);
+  font-size: 11px; font-weight: 700; color: var(--branco);
   background: linear-gradient(transparent, rgba(44, 44, 44, .85));
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
 }
@@ -252,17 +252,18 @@ details.sub summary { cursor: pointer; font-weight: 700; color: var(--azul); pad
 }
 .act span { color: var(--texto); }
 .act.hl { background: var(--amarelo); color: var(--grafite); }
-.contact { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--linha); }
+/* em telas estreitas os botões (ligar/WhatsApp/e-mail) descem para a linha de baixo em vez de espremer o nome */
+.contact { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--linha); }
 .contact:last-child { border-bottom: 0; padding-bottom: 0; }
 .contact:first-child { padding-top: 0; }
 .avatar {
   width: 42px; height: 42px; flex: none; display: grid; place-items: center;
   border-radius: 50%; background: var(--azul); color: var(--amarelo); font-weight: 800;
 }
-.cinfo { flex: 1; min-width: 0; }
-.cinfo b { display: block; }
-.cinfo small { display: block; color: var(--texto-2); overflow: hidden; text-overflow: ellipsis; }
-.cact { display: flex; gap: 6px; }
+.cinfo { flex: 1 1 150px; min-width: 0; }
+.cinfo b { display: block; overflow-wrap: anywhere; }
+.cinfo small { display: block; color: var(--texto-2); overflow-wrap: anywhere; }
+.cact { display: flex; gap: 6px; margin-left: auto; }
 .map-embed { display: block; width: 100%; height: 200px; margin-top: 10px; border: 0; border-radius: 12px; background: var(--cinza-claro); }
 .kv { margin: 0; }
 .kv dt { margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--texto-2); text-transform: uppercase; }

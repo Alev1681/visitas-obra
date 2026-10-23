@@ -1204,6 +1204,13 @@
       const est = await navigator.storage?.estimate?.();
       if (est) uso = `Espaço usado pelo app: ${(est.usage / 1048576).toFixed(1)} MB`;
     } catch { /* indisponível */ }
+    // Pronto para uso sem internet = service worker no controle + arquivos do app guardados no cache.
+    let guardados = 0;
+    try {
+      const nomes = (await caches.keys()).filter(k => k.startsWith('visitas-obra-'));
+      for (const n of nomes) guardados += (await (await caches.open(n)).keys()).length;
+    } catch { /* cache indisponível (navegação privada, file://) */ }
+    const offlineOk = !!navigator.serviceWorker?.controller && guardados > 0;
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
@@ -1229,12 +1236,15 @@
           : 'Opcional: o código permite criar uma senha nova se você esquecer a atual. Sem ele, a recuperação é apagar os dados e restaurar um backup.'}</p>
       </section>
 
-      ${standalone ? '' : `<section class="sec">
-        <h2>Instalar no celular</h2>
-        ${deferredPrompt ? `<button class="btn btn-primary wide" id="btn-install" type="button">${icon('download')} Instalar app</button>`
+      <section class="sec">
+        <h2>${standalone ? 'Uso sem internet' : 'Instalar no celular'}</h2>
+        <p class="small" id="offline-st">${offlineOk
+          ? `<b style="color:var(--azul)">✓ Pronto para usar sem internet</b> (${guardados} arquivos do app guardados neste celular). Só a busca de CEP, o endereço pelo GPS e os mapas precisam de sinal.`
+          : '<b>Ainda não está pronto para usar sem internet.</b> Abra o app uma vez com internet e volte aqui.'}</p>
+        ${standalone ? '' : deferredPrompt ? `<button class="btn btn-primary wide" id="btn-install" type="button">${icon('download')} Instalar app</button>`
           : ios ? '<p>No iPhone (Safari): toque em <b>Compartilhar</b> → <b>Adicionar à Tela de Início</b>.</p>'
             : '<p>No Android (Chrome): toque no menu <b>⋮</b> → <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.</p>'}
-      </section>`}
+      </section>
 
       <section class="sec">
         <h2>Dados e backup</h2>

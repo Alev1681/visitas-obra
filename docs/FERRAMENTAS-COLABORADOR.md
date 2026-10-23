@@ -51,7 +51,7 @@ O carro é uma **vitrine móvel**: precisa estar limpo, com adesivos íntegros e
 
 | App | Uso |
 |---|---|
-| **Visitas de Obra** (este app) | Registro da visita: contato, endereço, GPS, fotos, material entregue, retorno |
+| **Visitas de Obra** (este app) | Registro da visita: contato, endereço, GPS, fotos, material entregue, retorno. Instalado na tela inicial, funciona **sem internet** (confira “✓ Pronto para usar sem internet” em Ajustes) |
 | **Google Maps / Waze** | Navegação e rota do dia (o app gera a rota dos retornos no Google Maps) |
 | **WhatsApp Business** | Catálogo de produtos, mensagens rápidas (“Olá, sou o(a) … da …”) e etiquetas de clientes |
 | **Google Agenda** | Lembretes de retorno (o app cria o evento com 1 toque) |

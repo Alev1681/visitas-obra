@@ -150,6 +150,18 @@ Para poucos colaboradores não compensa: instalar pela tela inicial dá o mesmo 
 4. Em **Ajustes**, confira o nome do colaborador e preencha o nome da empresa (aparecem nos relatórios e nas fotos).
 5. Faça uma visita de teste: capturar GPS, tirar foto, enviar relatório.
 
+### Usar o app instalado, sem internet
+
+Depois de instalado, o app fica **guardado dentro do celular** e abre pelo ícone mesmo sem sinal nenhum (modo avião, subsolo, obra afastada). Visitas, fotos e backups também ficam no aparelho.
+
+1. Abra o app **uma vez com internet** depois de instalar (ou depois de cada atualização).
+2. Em **Ajustes**, confira a mensagem **“✓ Pronto para usar sem internet”** (mostra quantos arquivos do app estão guardados). Se aparecer “Ainda não está pronto”, abra o app com internet e volte em Ajustes.
+3. Pronto: dá para cadastrar e editar visitas, tirar fotos, capturar o GPS, ver retornos, fazer o checklist e exportar a planilha (Excel) e o backup **sem internet**.
+
+Precisam de sinal (e avisam quando não há): **buscar CEP**, **preencher o endereço pelo GPS**, abrir o **mapa / rota** no Google Maps e **enviar** relatório ou arquivos pelo WhatsApp/e-mail. As coordenadas do GPS em si vêm do próprio celular e funcionam sem internet.
+
+> Testado: com o servidor desligado, o app abriu pelo cache já conectado, gravou uma visita nova e gerou a planilha Excel.
+
 ## Atualizar o app depois de mudanças
 
 1. Edite os arquivos em `public/` (ex.: `public/js/config.js`).
@@ -208,4 +220,8 @@ Teste com dados simulados num computador (celular costuma ser 3 a 6 vezes mais l
 | Restaurar 900 fotos | 1,5 s (antes 8,5 s) |
 
 Fotos antigas, sem miniatura, ganham uma na primeira vez que aparecem na lista (cerca de 15 a 20 ms por foto, uma única vez).
+
+### Telas em várias resoluções (medido)
+
+16 telas do app (cadastro, login, lista, nova visita, detalhe, foto em tela cheia, retornos, checklist, ajustes…) verificadas automaticamente em 10 tamanhos: 320×568, 360×640, 360×800, 375×812, 390×844, 412×915, 430×932, celular deitado 812×375, tablet 768×1024 e computador 1280×800. Em cada uma: sem rolagem lateral, nada fora da tela, botões com 32 px ou mais, texto com 11 px ou mais e sem corte, barra inferior sem cobrir conteúdo, contraste WCAG AA e nenhum erro de JavaScript. **Resultado: 106 de 106 verificações em todas as 10 resoluções (100%).**
 - Próximo passo possível: sincronizar com a nuvem (ex.: Firebase) para o gestor ver as visitas em tempo real.
